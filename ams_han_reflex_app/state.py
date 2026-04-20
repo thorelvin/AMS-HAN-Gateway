@@ -6,6 +6,9 @@ import reflex as rx
 
 from .service import gateway_service
 
+POLL_INTERVAL_S = 2.0
+CLIENT_DISCONNECT_GRACE_CYCLES = 5
+
 class DashboardState(rx.State):
     ports: list[str] = []
     selected_port: str = ''
@@ -118,11 +121,13 @@ class DashboardState(rx.State):
     _polling_started: bool = False
     _startup_done: bool = False
     _slow_counter: int = 0
+    _client_disconnect_checks: int = 0
 
     def on_load(self):
         self.refresh_ports(); self.sync_from_service(force_heavy=True)
         if not self._polling_started:
             self._polling_started = True
+            self._client_disconnect_checks = 0
             return DashboardState.poll_loop
         return None
 
@@ -137,20 +142,31 @@ class DashboardState(rx.State):
 
     @rx.event(background=True)
     async def poll_loop(self):
-        while True:
-            if not self._client_is_connected():
-                break
-            async with self:
-                if not self._startup_done:
-                    self._startup_done = True
-                    self.auto_connect_message = gateway_service.auto_connect(int(self.baudrate or '115200'))
-                if gateway_service.replay_summary().get('active'):
-                    gateway_service.advance_replay()
-                else:
-                    gateway_service.auto_reconnect_if_needed(int(self.baudrate or '115200'))
-                self._slow_counter += 1
-                self.sync_from_service(force_heavy=(self._slow_counter % 3 == 0))
-            await asyncio.sleep(2)
+        try:
+            while True:
+                if not self._client_is_connected():
+                    self._client_disconnect_checks += 1
+                    if self._client_disconnect_checks >= CLIENT_DISCONNECT_GRACE_CYCLES:
+                        break
+                    await asyncio.sleep(POLL_INTERVAL_S)
+                    continue
+
+                async with self:
+                    self._client_disconnect_checks = 0
+                    if not self._startup_done:
+                        self._startup_done = True
+                        self.auto_connect_message = gateway_service.auto_connect(int(self.baudrate or '115200'))
+                    if gateway_service.replay_summary().get('active'):
+                        gateway_service.advance_replay()
+                    else:
+                        gateway_service.auto_reconnect_if_needed(int(self.baudrate or '115200'))
+                    self._slow_counter += 1
+                    self.sync_from_service(force_heavy=(self._slow_counter % 3 == 0))
+                await asyncio.sleep(POLL_INTERVAL_S)
+        finally:
+            # Allow a reloaded or reconnected page to start a fresh background loop.
+            self._polling_started = False
+            self._client_disconnect_checks = 0
 
     def sync_from_service(self, force_heavy: bool = False):
         self.connection_status = gateway_service.connection_status
