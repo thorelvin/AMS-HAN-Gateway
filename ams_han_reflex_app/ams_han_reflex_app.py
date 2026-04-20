@@ -7,6 +7,17 @@ from .domain.pricing import PRICE_AREAS
 from .state import DashboardState
 
 UPLOAD_ID = "replay_upload"
+LIVE_SYNC_INTERVAL_MS = 2000
+
+
+def live_heartbeat() -> rx.Component:
+    return rx.box(
+        rx.moment(
+            interval=LIVE_SYNC_INTERVAL_MS,
+            on_change=DashboardState.live_tick.temporal,
+        ),
+        display="none",
+    )
 
 
 def replay_panel() -> rx.Component:
@@ -783,6 +794,7 @@ def index() -> rx.Component:
     return rx.theme(
         rx.box(
             rx.vstack(
+                live_heartbeat(),
                 rx.hstack(
                     rx.vstack(
                         rx.heading("AMS HAN Gateway Tool", size="8"),

@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 import reflex as rx
 
 from .service import gateway_service
-
-POLL_INTERVAL_S = 2.0
-CLIENT_DISCONNECT_GRACE_CYCLES = 5
 
 class DashboardState(rx.State):
     ports: list[str] = []
@@ -118,64 +113,28 @@ class DashboardState(rx.State):
     show_advanced: bool = bool(gateway_service.settings.get('show_advanced', False))
     auto_connect_message: str = 'Searching for gateway...'
     stale_snapshot: bool = False
-    _polling_started: bool = False
-    _startup_done: bool = False
     _slow_counter: int = 0
-    _client_disconnect_checks: int = 0
 
     def on_load(self):
-        self.refresh_ports(); self.sync_from_service(force_heavy=True)
-        if not self._polling_started:
-            self._polling_started = True
-            self._client_disconnect_checks = 0
-            return DashboardState.poll_loop
-        return None
+        self._slow_counter = 0
+        self.refresh_ports()
+        self.sync_from_service(force_heavy=True)
+        if gateway_service.serial.connected:
+            self.auto_connect_message = gateway_service.connection_status
+        elif gateway_service.replay_summary().get('loaded'):
+            self.auto_connect_message = 'Replay loaded'
+        else:
+            self.auto_connect_message = 'Searching for gateway...'
 
-    def _client_is_connected(self) -> bool:
-        token = getattr(getattr(getattr(self, 'router', None), 'session', None), 'client_token', '')
-        app = getattr(self, 'app', None)
-        namespace = getattr(app, 'event_namespace', None) if app is not None else None
-        token_map = getattr(namespace, 'token_to_sid', None)
-        if token and token_map is not None:
-            return token in token_map
-        return True
-
-    @rx.event(background=True)
-    async def poll_loop(self):
-        try:
-            while True:
-                client_connected = self._client_is_connected()
-                try:
-                    async with self:
-                        self._client_disconnect_checks = 0
-                        if not self._startup_done:
-                            self._startup_done = True
-                            self.auto_connect_message = gateway_service.auto_connect(int(self.baudrate or '115200'))
-                        if gateway_service.replay_summary().get('active'):
-                            gateway_service.advance_replay()
-                        else:
-                            gateway_service.auto_reconnect_if_needed(int(self.baudrate or '115200'))
-                        self._slow_counter += 1
-                        self.sync_from_service(force_heavy=(self._slow_counter % 3 == 0))
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:  # noqa: BLE001
-                    self._client_disconnect_checks += 1
-                    if self._client_disconnect_checks in (1, CLIENT_DISCONNECT_GRACE_CYCLES):
-                        gateway_service._append_log(
-                            'WARN',
-                            f'Background poll update failed ({self._client_disconnect_checks}): {exc}',
-                        )
-                    # Reflex docs present the websocket check as an optional way to stop
-                    # background tasks on page close. Treat it as advisory instead of
-                    # hard truth so transient token-map glitches do not freeze the UI.
-                    if not client_connected and self._client_disconnect_checks >= CLIENT_DISCONNECT_GRACE_CYCLES:
-                        break
-                await asyncio.sleep(POLL_INTERVAL_S)
-        finally:
-            # Allow a reloaded or reconnected page to start a fresh background loop.
-            self._polling_started = False
-            self._client_disconnect_checks = 0
+    def live_tick(self, _moment_value: str = ''):
+        if gateway_service.replay_summary().get('active'):
+            gateway_service.advance_replay()
+        else:
+            gateway_service.auto_reconnect_if_needed(int(self.baudrate or '115200'))
+        self._slow_counter += 1
+        if self._slow_counter % 9 == 0:
+            self.refresh_ports()
+        self.sync_from_service(force_heavy=(self._slow_counter % 3 == 0))
 
     def sync_from_service(self, force_heavy: bool = False):
         self.connection_status = gateway_service.connection_status

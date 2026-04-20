@@ -112,7 +112,8 @@ class GatewayService:
         return target
 
     def _ordered_candidates(self) -> list[tuple[str,str]]:
-        ports = self._last_ports_cache or SerialManager.list_ports()
+        ports = SerialManager.list_ports()
+        self._last_ports_cache = ports
         preferred = self.settings.get('last_port','')
         ports = sorted(ports, key=lambda pd: 0 if pd[0]==preferred else 1)
         return ports
@@ -141,6 +142,10 @@ class GatewayService:
     def auto_connect(self, baudrate: int) -> str:
         if self.replay_player.summary().loaded:
             return 'Replay loaded. Stop replay before hardware auto-connect.'
+        if self.serial.connected:
+            current_port = self.selected_port.split(' â€” ', 1)[0] if self.selected_port else self.settings.get('last_port', '')
+            self.connection_status = f'Connected to {current_port}' if current_port else 'Connected'
+            return self.connection_status
         for port, _desc in self._ordered_candidates():
             if self._probe_port(port, baudrate):
                 self.connect(port, baudrate)
