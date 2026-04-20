@@ -20,15 +20,49 @@ It is intended as a practical engineering project for understanding household im
 - Upload support for replay logs directly from the dashboard
 - Gateway control actions for `GET_INFO`, `GET_STATUS`, Wi-Fi setup, MQTT setup, and discovery republish
 
-## Verified setup
+## Verified hardware setup
 
-The current hardware setup has been tested with the ESP32 gateway, HAN adapter, and the local Reflex dashboard workflow shown in this repository.
+The hardware setup used in this repository has been verified in practice with the ESP32 gateway, HAN adapter, and the local Reflex dashboard workflow shown below.
 
 ### Hardware reference
 
 ESP32 gateway, terminal shield, USB link, and HAN adapter wiring used in the current setup:
 
 ![ESP32 HAN gateway hardware setup](docs/images/hardware-setup.jpg)
+
+Example setup:
+
+- Smart meter with HAN port enabled
+- HAN / M-Bus interface adapter
+- ESP32-WROOM-32D dev board with USB connection
+- USB connection from ESP32 to PC
+- Windows PC running the Reflex dashboard
+
+## Wiring diagram summary
+
+The hardware is connected as follows:
+
+- **Smart meter HAN port**
+  Use the HAN / RJ45 output from the meter.
+  In this setup, the HAN / M-Bus pair is taken from **pin 1** and **pin 2**.
+  Polarity does **not** matter for the HAN pair itself.
+
+- **HAN / M-Bus to TTL adapter**
+  Connect the two HAN wires from the smart meter to the adapter input.
+  The adapter acts as the electrical interface between the meter HAN signal and the ESP32 UART side.
+
+- **Adapter to ESP32**
+  The firmware uses **UART2** on the ESP32 for HAN communication.
+  **ESP32 GPIO16** is configured as **HAN RX**.
+  **ESP32 GPIO17** is configured as **HAN TX**.
+  Use a shared **GND** between the adapter and the ESP32.
+  The exact adapter power pin depends on the adapter board variant, so verify the board markings and voltage requirement before connecting VCC.
+
+- **ESP32 to PC**
+  Connect the ESP32 to the PC over USB.
+  The USB link provides the PC-side serial channel on **UART0**, which the dashboard uses for `GET_INFO`, `GET_STATUS`, `FRAME`, and `SNAP` traffic.
+
+This matches the current firmware configuration in the repository, where the HAN UART is set to `2400` baud on `UART2`.
 
 ## Dashboard screenshots
 
@@ -81,6 +115,18 @@ Serial and application log view showing `RSP`, `FRAME`, and `SNAP` traffic from 
 Serial connection controls plus replay and demo workflow:
 
 ![Advanced tools](docs/images/dashboard-advanced-tools.png)
+
+## Professional relevance
+
+This project is directly relevant to practical metering, integration, and troubleshooting-oriented development work. It demonstrates hands-on work with:
+
+- HAN/AMS communication
+- serial communication and gateway validation
+- ESP32-based embedded integration
+- MQTT and smart-home oriented telemetry publishing
+- phase and voltage analysis
+- event detection and troubleshooting-oriented visualization
+- replay-driven testing for monitoring workflows
 
 ## System overview
 
