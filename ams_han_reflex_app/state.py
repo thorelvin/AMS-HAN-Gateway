@@ -144,24 +144,33 @@ class DashboardState(rx.State):
     async def poll_loop(self):
         try:
             while True:
-                if not self._client_is_connected():
+                client_connected = self._client_is_connected()
+                try:
+                    async with self:
+                        self._client_disconnect_checks = 0
+                        if not self._startup_done:
+                            self._startup_done = True
+                            self.auto_connect_message = gateway_service.auto_connect(int(self.baudrate or '115200'))
+                        if gateway_service.replay_summary().get('active'):
+                            gateway_service.advance_replay()
+                        else:
+                            gateway_service.auto_reconnect_if_needed(int(self.baudrate or '115200'))
+                        self._slow_counter += 1
+                        self.sync_from_service(force_heavy=(self._slow_counter % 3 == 0))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
                     self._client_disconnect_checks += 1
-                    if self._client_disconnect_checks >= CLIENT_DISCONNECT_GRACE_CYCLES:
+                    if self._client_disconnect_checks in (1, CLIENT_DISCONNECT_GRACE_CYCLES):
+                        gateway_service._append_log(
+                            'WARN',
+                            f'Background poll update failed ({self._client_disconnect_checks}): {exc}',
+                        )
+                    # Reflex docs present the websocket check as an optional way to stop
+                    # background tasks on page close. Treat it as advisory instead of
+                    # hard truth so transient token-map glitches do not freeze the UI.
+                    if not client_connected and self._client_disconnect_checks >= CLIENT_DISCONNECT_GRACE_CYCLES:
                         break
-                    await asyncio.sleep(POLL_INTERVAL_S)
-                    continue
-
-                async with self:
-                    self._client_disconnect_checks = 0
-                    if not self._startup_done:
-                        self._startup_done = True
-                        self.auto_connect_message = gateway_service.auto_connect(int(self.baudrate or '115200'))
-                    if gateway_service.replay_summary().get('active'):
-                        gateway_service.advance_replay()
-                    else:
-                        gateway_service.auto_reconnect_if_needed(int(self.baudrate or '115200'))
-                    self._slow_counter += 1
-                    self.sync_from_service(force_heavy=(self._slow_counter % 3 == 0))
                 await asyncio.sleep(POLL_INTERVAL_S)
         finally:
             # Allow a reloaded or reconnected page to start a fresh background loop.
