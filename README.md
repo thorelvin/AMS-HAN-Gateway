@@ -26,3 +26,10 @@ You can:
 - paste a path and click **Load Replay**
 - click **Load Demo Replay**
 - or use **Browse / Upload Replay File** and then **Use Uploaded File**
+
+Bundled replay scenarios live in `fixtures/`:
+- `demo_session.log`
+- `replay_phase_loss_l2.log`
+- `replay_load_switching.log`
+- `replay_voltage_sag.log`
+- `replay_solar_export_cycle.log`
