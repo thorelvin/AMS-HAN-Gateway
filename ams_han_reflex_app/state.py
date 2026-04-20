@@ -197,7 +197,9 @@ class DashboardState(rx.State):
     def set_grid_night_rate(self, value:str): self.grid_night_rate=value
     def set_history_limit(self, value:str): self.history_limit=value
     def set_db_path(self, value:str): self.db_path=value
-    def set_event_filter(self, value:str): self.event_filter=value
+    def set_event_filter(self, value:str):
+        self.event_filter = value
+        self.refresh_diagnostics()
     def set_replay_path(self, value:str): self.replay_path=value
 
     def toggle_advanced(self):
@@ -277,6 +279,12 @@ class DashboardState(rx.State):
     def wifi_summary(self) -> str: return f"{self.wifi_state} • {self.wifi_ip}" if self.wifi_ip else self.wifi_state
     @rx.var(cache=False)
     def db_summary(self) -> str: return f"{self.db_count} snapshots"
+    @rx.var(cache=False)
+    def theme_toggle_label(self) -> str:
+        return 'Switch to dark mode' if self.theme_mode == 'light' else 'Switch to light mode'
+    @rx.var(cache=False)
+    def has_diagnostics_issues(self) -> bool:
+        return len(self.diagnostics_issues) > 0
     @rx.var(cache=False)
     def has_snapshot(self) -> bool: return self.snapshot_meter != '-'
     @rx.var(cache=False)
