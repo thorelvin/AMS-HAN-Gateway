@@ -80,6 +80,28 @@ Phase and voltage analysis together with load signatures and top-hour buckets:
 
 ![Analysis tab](docs/images/dashboard-analysis.png)
 
+### Load Signatures explained
+
+The `Load Signatures` table is where the dashboard starts turning repeated power changes into practical operator hints instead of just raw meter values.
+
+![Load Signatures table](docs/images/dashboard-load-signatures.png)
+
+Each row represents a recurring pattern seen in the event engine:
+
+- **Signature** is the dashboard's best current description of the load behavior, such as a likely heater step, a single-phase appliance step, or a smaller background change.
+- **Phase** shows whether the pattern is mostly tied to `L1`, `L2`, `L3`, or is not yet phase-specific.
+- **Typical W** gives the representative watt size of that signature, making it much easier to identify whether the change looks like a panel heater, water heater, kitchen appliance, EV-related load step, or a small background consumer.
+- **Events** shows how many times that pattern has been observed.
+- **Last Seen** helps confirm whether the device is currently active or was only present earlier in the session.
+- **Confidence** shows how stable the classification is based on the samples collected so far.
+
+Why this matters:
+
+- It helps translate repeated import jumps into likely real household devices instead of forcing the user to interpret every power step manually.
+- It makes troubleshooting faster when you are trying to find what caused a peak, phase imbalance, or a suspicious load session.
+- It gives a practical bridge between raw HAN telemetry and energy optimization, because identifying a recurring `2500 W` to `2700 W` heater-like load is much more actionable than only seeing that import increased.
+- It becomes more useful over time as the dashboard sees more repeated patterns in live traffic or replay logs.
+
 ### Diagnostics tab
 
 Suspected issues, health panel, and filtered event tracker for power, voltage, phase, and data-quality events:
@@ -373,6 +395,7 @@ Current analysis and diagnostics include:
 - voltage-sag and phase-spread detection
 - baseline-driven load-session start and end events
 - power-step detection against recent samples
+- recurring load-signature grouping with phase tagging, event counts, representative watt size, and confidence
 - likely device hints for large single-phase and three-phase changes
 - cost rows built from elapsed time between snapshots rather than raw sample counts
 - capacity estimate based on top hourly import averages on different days
