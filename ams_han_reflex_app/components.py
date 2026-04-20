@@ -44,7 +44,7 @@ def hero_card(title, value, subtitle, accent: str = 'blue') -> rx.Component:
             spacing='2', align='start', width='100%',
         ),
         size='4', border_radius='22px', width='100%',
-        bg=f"linear-gradient(135deg, {rx.color(accent, 2)}, white)",
+        bg=f"linear-gradient(135deg, {rx.color(accent, 2)}, {rx.color('gray', 1)})",
         border=f"1px solid {rx.color(accent, 4)}",
     )
 
@@ -83,7 +83,7 @@ def tiny_metric(title: str, value, accent: str = 'blue') -> rx.Component:
         rx.text(title, size='2', color=rx.color('gray', 10)),
         rx.text(value, size='5', weight='bold', color=rx.color(accent, 11)),
         border=f"1px solid {rx.color('gray', 4)}",
-        border_radius='16px', padding='0.9em 1.1em', width='100%', bg='white',
+        border_radius='16px', padding='0.9em 1.1em', width='100%', bg=rx.color('gray', 2),
     )
 
 

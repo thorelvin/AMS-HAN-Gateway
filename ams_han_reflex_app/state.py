@@ -113,7 +113,6 @@ class DashboardState(rx.State):
     event_filter: str = str(gateway_service.settings.get('event_filter', 'all'))
     logs: list[str] = []
     show_advanced: bool = bool(gateway_service.settings.get('show_advanced', False))
-    theme_mode: str = str(gateway_service.settings.get('theme_mode', 'light'))
     auto_connect_message: str = 'Searching for gateway...'
     stale_snapshot: bool = False
     _polling_started: bool = False
@@ -208,11 +207,6 @@ class DashboardState(rx.State):
         gateway_service.settings['baudrate']=int(self.baudrate or '115200')
         gateway_service._save_settings()
 
-    def toggle_theme(self):
-        self.theme_mode = 'dark' if self.theme_mode == 'light' else 'light'
-        gateway_service.settings['theme_mode'] = self.theme_mode
-        gateway_service._save_settings()
-
     def connect(self):
         if self.selected_port:
             gateway_service.connect(self.selected_port, int(self.baudrate or '115200')); self.sync_from_service(force_heavy=True)
@@ -279,9 +273,6 @@ class DashboardState(rx.State):
     def wifi_summary(self) -> str: return f"{self.wifi_state} • {self.wifi_ip}" if self.wifi_ip else self.wifi_state
     @rx.var(cache=False)
     def db_summary(self) -> str: return f"{self.db_count} snapshots"
-    @rx.var(cache=False)
-    def theme_toggle_label(self) -> str:
-        return 'Switch to dark mode' if self.theme_mode == 'light' else 'Switch to light mode'
     @rx.var(cache=False)
     def has_diagnostics_issues(self) -> bool:
         return len(self.diagnostics_issues) > 0
