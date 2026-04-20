@@ -20,6 +20,68 @@ It is intended as a practical engineering project for understanding household im
 - Upload support for replay logs directly from the dashboard
 - Gateway control actions for `GET_INFO`, `GET_STATUS`, Wi-Fi setup, MQTT setup, and discovery republish
 
+## Verified setup
+
+The current hardware setup has been tested with the ESP32 gateway, HAN adapter, and the local Reflex dashboard workflow shown in this repository.
+
+### Hardware reference
+
+ESP32 gateway, terminal shield, USB link, and HAN adapter wiring used in the current setup:
+
+![ESP32 HAN gateway hardware setup](docs/images/hardware-setup.jpg)
+
+## Dashboard screenshots
+
+The screenshots below show the current interface and the main operator views available in the dashboard.
+
+### Overview tab
+
+Live import/export overview, latest snapshot, quick actions, and gateway status:
+
+![Overview tab](docs/images/dashboard-overview.png)
+
+### Analysis tab
+
+Phase and voltage analysis together with load signatures and top-hour buckets:
+
+![Analysis tab](docs/images/dashboard-analysis.png)
+
+### Diagnostics tab
+
+Suspected issues, health panel, and filtered event tracker for power, voltage, phase, and data-quality events:
+
+![Diagnostics tab](docs/images/dashboard-diagnostics.png)
+
+### Daily tab
+
+Daily load graph and hourly buckets for the latest meter day:
+
+![Daily tab](docs/images/dashboard-daily.png)
+
+### Cost tab
+
+Price area, grid settings, hourly cost rows, and capacity estimate:
+
+![Cost tab](docs/images/dashboard-cost.png)
+
+### History tab
+
+Stored snapshot history with averages, peaks, and local database context:
+
+![History tab](docs/images/dashboard-history.png)
+
+### Log tab
+
+Serial and application log view showing `RSP`, `FRAME`, and `SNAP` traffic from the gateway:
+
+![Log tab](docs/images/dashboard-log.png)
+
+### Advanced tools
+
+Serial connection controls plus replay and demo workflow:
+
+![Advanced tools](docs/images/dashboard-advanced-tools.png)
+
 ## System overview
 
 The project is split into two practical parts:
@@ -62,6 +124,8 @@ The local Python application is responsible for:
 |   |-- backend/
 |   |-- domain/
 |   `-- support/
+|-- docs/
+|   `-- images/
 |-- fixtures/
 |-- tests/
 |-- esp32_wroom32d_ams_han_gateway.zip
@@ -72,6 +136,7 @@ The local Python application is responsible for:
 ```
 
 - `ams_han_reflex_app/` contains the Reflex UI, application service, parsing, diagnostics, pricing, and replay support.
+- `docs/images/` contains README screenshots and hardware reference images.
 - `esp32_wroom32d_ams_han_gateway.zip` contains the bundled ESP-IDF firmware project for the ESP32 gateway.
 - `fixtures/` contains bundled replay logs for testing gateway and dashboard behavior without live data.
 - `tests/` currently contains replay-player validation.
