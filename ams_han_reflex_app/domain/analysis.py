@@ -1,9 +1,33 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from statistics import mean
 from typing import Any
+
+WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+
+@dataclass
+class HeatmapCell:
+    hour: str
+    primary: str
+    secondary: str
+    bg: str
+    border: str
+    text_color: str
+    secondary_color: str
+    duration_text: str
+    tooltip: str
+
+
+@dataclass
+class HeatmapRow:
+    label: str
+    peak_text: str
+    change_text: str
+    cells: list[HeatmapCell]
 
 
 def parse_meter_dt(ts: str) -> datetime | None:
@@ -170,6 +194,261 @@ def daily_graph_data(records_desc: list[Any]) -> dict[str, Any]:
         rows.append({'hour':f'{h:02d}','import_kw':round(ik,3),'export_kw':round(ek,3),'signed_kw':round(sk,3)})
     peak_text = f"Peak export {peak:.2f} kW" if any(r['export_kw']>=r['import_kw'] for r in rows) else f"Peak import {peak:.2f} kW"
     return {'rows':rows,'date_text':str(latest_date),'hours_text':f'{count} populated hours','peak_text':peak_text}
+
+
+def _sample_power(snapshot) -> dict[str, float]:
+    signed_kw = signed_grid_w(snapshot) / 1000.0
+    return {
+        'signed_kw': signed_kw,
+        'abs_kw': max(snapshot.import_w, snapshot.export_w) / 1000.0,
+        'import_kw': snapshot.import_w / 1000.0,
+        'export_kw': snapshot.export_w / 1000.0,
+    }
+
+
+def _empty_heat_bucket() -> dict[str, float]:
+    return {
+        'duration_h': 0.0,
+        'abs_energy_kwh': 0.0,
+        'signed_energy_kwh': 0.0,
+        'import_energy_kwh': 0.0,
+        'export_energy_kwh': 0.0,
+        'step_sum_kw': 0.0,
+        'step_count': 0.0,
+        'peak_abs_kw': 0.0,
+    }
+
+
+def _next_hour_boundary(dt: datetime) -> datetime:
+    return dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+
+def _accumulate_interval(bucket: dict[str, float], sample: dict[str, float], duration_h: float) -> None:
+    bucket['duration_h'] += duration_h
+    bucket['abs_energy_kwh'] += sample['abs_kw'] * duration_h
+    bucket['signed_energy_kwh'] += sample['signed_kw'] * duration_h
+    bucket['import_energy_kwh'] += sample['import_kw'] * duration_h
+    bucket['export_energy_kwh'] += sample['export_kw'] * duration_h
+    bucket['peak_abs_kw'] = max(bucket['peak_abs_kw'], sample['abs_kw'])
+
+
+def _bucket_stats(bucket: dict[str, float]) -> dict[str, float]:
+    duration_h = bucket['duration_h']
+    step_count = bucket['step_count']
+    if duration_h <= 0:
+        return {
+            'avg_abs_kw': 0.0,
+            'avg_signed_kw': 0.0,
+            'avg_import_kw': 0.0,
+            'avg_export_kw': 0.0,
+            'avg_step_kw': 0.0,
+            'peak_abs_kw': 0.0,
+        }
+    return {
+        'avg_abs_kw': bucket['abs_energy_kwh'] / duration_h,
+        'avg_signed_kw': bucket['signed_energy_kwh'] / duration_h,
+        'avg_import_kw': bucket['import_energy_kwh'] / duration_h,
+        'avg_export_kw': bucket['export_energy_kwh'] / duration_h,
+        'avg_step_kw': (bucket['step_sum_kw'] / step_count) if step_count else 0.0,
+        'peak_abs_kw': bucket['peak_abs_kw'],
+    }
+
+
+def _format_cell_text(stats: dict[str, float], duration_h: float) -> tuple[str, str]:
+    if duration_h <= 0:
+        return '-', 'No data'
+    signed = stats['avg_signed_kw']
+    change = stats['avg_step_kw']
+    primary = f"{signed:+.1f} kW"
+    secondary = f"Use {stats['avg_abs_kw']:.1f} | d {change:.1f}"
+    return primary, secondary
+
+
+def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple[str, str, str, str]:
+    base_alpha = 0.12 + (0.68 * max(0.0, min(load_norm, 1.0)))
+    change_alpha = 0.08 + (0.62 * max(0.0, min(change_norm, 1.0)))
+    if signed_kw > 0.12:
+        base_rgb = (22, 163, 74)
+    elif signed_kw < -0.12:
+        base_rgb = (37, 99, 235)
+    else:
+        base_rgb = (100, 116, 139)
+    bg = (
+        f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {base_alpha:.3f}) 0%, "
+        f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(base_alpha * 0.82, 0.08):.3f}) 72%, "
+        f"rgba(245, 158, 11, {change_alpha:.3f}) 100%)"
+    )
+    border = f"1px solid rgba(148, 163, 184, {0.18 + 0.35 * max(load_norm, change_norm):.3f})"
+    text_color = '#f8fafc' if max(load_norm, change_norm) >= 0.58 else '#0f172a'
+    secondary_color = '#e2e8f0' if text_color == '#f8fafc' else '#334155'
+    return bg, border, text_color, secondary_color
+
+
+def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[str, Any]:
+    hourly_buckets: dict[tuple[str, int], dict[str, float]] = defaultdict(_empty_heat_bucket)
+    if not records_desc:
+        return {
+            'recent_rows': [],
+            'weekday_rows': [],
+            'day_count_text': '0 days',
+            'peak_hour_text': 'No hourly load peak yet',
+            'change_peak_text': 'No load-change spikes yet',
+            'weekday_focus_text': 'No weekday pattern yet',
+        }
+
+    records = list(reversed(records_desc))
+    dated_records: list[tuple[datetime, Any]] = []
+    for record in records:
+        dt = parse_meter_dt(record.snapshot.timestamp)
+        if dt is not None:
+            dated_records.append((dt, record))
+    if len(dated_records) < 2:
+        return {
+            'recent_rows': [],
+            'weekday_rows': [],
+            'day_count_text': '1 day' if dated_records else '0 days',
+            'peak_hour_text': 'Need more history for heatmap',
+            'change_peak_text': 'Need more history for change heatmap',
+            'weekday_focus_text': 'Need more history for weekday pattern',
+        }
+
+    for idx in range(len(dated_records) - 1):
+        start_dt, start_record = dated_records[idx]
+        end_dt, end_record = dated_records[idx + 1]
+        delta_h = (end_dt - start_dt).total_seconds() / 3600.0
+        if delta_h <= 0 or delta_h > 0.5:
+            continue
+        sample = _sample_power(start_record.snapshot)
+        cursor = start_dt
+        while cursor < end_dt:
+            segment_end = min(end_dt, _next_hour_boundary(cursor))
+            segment_h = (segment_end - cursor).total_seconds() / 3600.0
+            if segment_h > 0:
+                key = (cursor.strftime('%Y-%m-%d'), cursor.hour)
+                _accumulate_interval(hourly_buckets[key], sample, segment_h)
+            cursor = segment_end
+
+        current_signed_kw = signed_grid_w(end_record.snapshot) / 1000.0
+        previous_signed_kw = sample['signed_kw']
+        step_kw = abs(current_signed_kw - previous_signed_kw)
+        end_key = (end_dt.strftime('%Y-%m-%d'), end_dt.hour)
+        hourly_buckets[end_key]['step_sum_kw'] += step_kw
+        hourly_buckets[end_key]['step_count'] += 1.0
+        hourly_buckets[end_key]['peak_abs_kw'] = max(
+            hourly_buckets[end_key]['peak_abs_kw'],
+            _sample_power(end_record.snapshot)['abs_kw'],
+        )
+
+    if not hourly_buckets:
+        return {
+            'recent_rows': [],
+            'weekday_rows': [],
+            'day_count_text': '0 days',
+            'peak_hour_text': 'No hourly load peak yet',
+            'change_peak_text': 'No load-change spikes yet',
+            'weekday_focus_text': 'No weekday pattern yet',
+        }
+
+    unique_days = sorted({day for day, _hour in hourly_buckets.keys()})
+    recent_day_labels = list(reversed(unique_days[-recent_days:]))
+    all_stats = [_bucket_stats(bucket) for bucket in hourly_buckets.values() if bucket['duration_h'] > 0]
+    max_abs_kw = max((stats['avg_abs_kw'] for stats in all_stats), default=1.0) or 1.0
+    max_step_kw = max((stats['avg_step_kw'] for stats in all_stats), default=1.0) or 1.0
+
+    def make_cells(bucket_lookup, label_key: Any, label_text: str) -> HeatmapRow:
+        cells: list[HeatmapCell] = []
+        row_peak = 0.0
+        row_change = 0.0
+        for hour in range(24):
+            bucket = bucket_lookup(label_key, hour)
+            stats = _bucket_stats(bucket)
+            primary, secondary = _format_cell_text(stats, bucket['duration_h'])
+            load_norm = stats['avg_abs_kw'] / max_abs_kw if max_abs_kw else 0.0
+            change_norm = stats['avg_step_kw'] / max_step_kw if max_step_kw else 0.0
+            bg, border, text_color, secondary_color = _cell_style(load_norm, change_norm, stats['avg_signed_kw'])
+            cells.append(HeatmapCell(
+                hour=f'{hour:02d}',
+                primary=primary,
+                secondary=secondary,
+                bg=bg,
+                border=border,
+                text_color=text_color,
+                secondary_color=secondary_color,
+                duration_text=f"{bucket['duration_h']:.2f} h",
+                tooltip=(
+                    f"{label_text} {hour:02d}:00 | Net {stats['avg_signed_kw']:+.2f} kW | "
+                    f"Use {stats['avg_abs_kw']:.2f} kW | Change {stats['avg_step_kw']:.2f} kW | "
+                    f"Peak {stats['peak_abs_kw']:.2f} kW | Coverage {bucket['duration_h']:.2f} h"
+                ),
+            ))
+            row_peak = max(row_peak, stats['avg_abs_kw'])
+            row_change = max(row_change, stats['avg_step_kw'])
+        return HeatmapRow(
+            label=label_text,
+            peak_text=f'{row_peak:.1f} kW peak use',
+            change_text=f'{row_change:.1f} kW avg step max',
+            cells=cells,
+        )
+
+    recent_rows = [
+        make_cells(lambda day, hour: hourly_buckets[(day, hour)], day_label, day_label)
+        for day_label in recent_day_labels
+    ]
+
+    weekday_buckets: dict[tuple[int, int], dict[str, float]] = defaultdict(_empty_heat_bucket)
+    for (day_label, hour), bucket in hourly_buckets.items():
+        day_dt = datetime.strptime(day_label, '%Y-%m-%d')
+        key = (day_dt.weekday(), hour)
+        merged = weekday_buckets[key]
+        for field in ('duration_h', 'abs_energy_kwh', 'signed_energy_kwh', 'import_energy_kwh', 'export_energy_kwh', 'step_sum_kw', 'step_count'):
+            merged[field] += bucket[field]
+        merged['peak_abs_kw'] = max(merged['peak_abs_kw'], bucket['peak_abs_kw'])
+
+    weekday_rows = [
+        make_cells(lambda weekday_idx, hour: weekday_buckets[(weekday_idx, hour)], weekday_idx, WEEKDAY_LABELS[weekday_idx])
+        for weekday_idx in range(7)
+    ]
+
+    peak_day_hour = max(
+        ((day, hour, _bucket_stats(bucket)['avg_abs_kw']) for (day, hour), bucket in hourly_buckets.items() if bucket['duration_h'] > 0),
+        key=lambda item: item[2],
+        default=None,
+    )
+    change_day_hour = max(
+        ((day, hour, _bucket_stats(bucket)['avg_step_kw']) for (day, hour), bucket in hourly_buckets.items() if bucket['duration_h'] > 0),
+        key=lambda item: item[2],
+        default=None,
+    )
+    weekday_focus = max(
+        (
+            (
+                WEEKDAY_LABELS[weekday_idx],
+                mean([
+                    _bucket_stats(weekday_buckets[(weekday_idx, hour)])['avg_abs_kw']
+                    for hour in range(24)
+                    if weekday_buckets[(weekday_idx, hour)]['duration_h'] > 0
+                ]) if any(weekday_buckets[(weekday_idx, hour)]['duration_h'] > 0 for hour in range(24)) else 0.0,
+            )
+            for weekday_idx in range(7)
+        ),
+        key=lambda item: item[1],
+        default=('Mon', 0.0),
+    )
+
+    return {
+        'recent_rows': recent_rows,
+        'weekday_rows': weekday_rows,
+        'day_count_text': f'{len(unique_days)} days in heatmap',
+        'peak_hour_text': (
+            f"{peak_day_hour[0]} {peak_day_hour[1]:02d}:00 at {peak_day_hour[2]:.1f} kW"
+            if peak_day_hour else 'No hourly load peak yet'
+        ),
+        'change_peak_text': (
+            f"{change_day_hour[0]} {change_day_hour[1]:02d}:00 at {change_day_hour[2]:.1f} kW avg step"
+            if change_day_hour else 'No load-change spikes yet'
+        ),
+        'weekday_focus_text': f'{weekday_focus[0]} is busiest on average ({weekday_focus[1]:.1f} kW)',
+    }
 
 
 def what_changed(snapshot, events):

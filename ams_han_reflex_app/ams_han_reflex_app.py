@@ -8,6 +8,7 @@ from .state import DashboardState
 
 UPLOAD_ID = "replay_upload"
 LIVE_SYNC_INTERVAL_MS = 2000
+HEATMAP_HOURS = [f"{hour:02d}" for hour in range(24)]
 
 
 def live_heartbeat() -> rx.Component:
@@ -585,6 +586,148 @@ def daily_tab() -> rx.Component:
     )
 
 
+def heatmap_hour_header(hour: str) -> rx.Component:
+    return rx.box(
+        rx.text(hour, size="2", weight="medium", color=rx.color("gray", 10), text_align="center"),
+        width="68px",
+        min_width="68px",
+        padding="0.25em 0",
+    )
+
+
+def heatmap_cell(cell) -> rx.Component:
+    return rx.box(
+        rx.vstack(
+            rx.text(cell.primary, size="2", weight="bold", color=cell.text_color, line_height="1.1"),
+            rx.text(cell.secondary, size="1", color=cell.secondary_color, line_height="1.15"),
+            spacing="1",
+            align="start",
+            width="100%",
+        ),
+        width="68px",
+        min_width="68px",
+        min_height="70px",
+        padding="0.55em",
+        border_radius="14px",
+        bg=cell.bg,
+        border=cell.border,
+        title=cell.tooltip,
+        box_shadow="inset 0 1px 0 rgba(255,255,255,0.06)",
+    )
+
+
+def heatmap_row(row) -> rx.Component:
+    return rx.hstack(
+        rx.box(
+            rx.vstack(
+                rx.text(row.label, size="2", weight="bold"),
+                rx.text(row.peak_text, size="1", color=rx.color("gray", 10)),
+                rx.text(row.change_text, size="1", color=rx.color("gray", 10)),
+                spacing="1",
+                align="start",
+            ),
+            width="150px",
+            min_width="150px",
+            padding_right="0.5em",
+        ),
+        rx.foreach(row.cells, heatmap_cell),
+        spacing="2",
+        align="stretch",
+        width="max-content",
+    )
+
+
+def heatmap_legend() -> rx.Component:
+    return rx.hstack(
+        rx.hstack(
+            rx.box(width="18px", height="18px", border_radius="6px", bg="rgba(37, 99, 235, 0.55)", border="1px solid rgba(148, 163, 184, 0.28)"),
+            rx.text("Import-heavy hour", size="2", color=rx.color("gray", 10)),
+            spacing="2",
+            align="center",
+        ),
+        rx.hstack(
+            rx.box(width="18px", height="18px", border_radius="6px", bg="rgba(22, 163, 74, 0.55)", border="1px solid rgba(148, 163, 184, 0.28)"),
+            rx.text("Export-heavy hour", size="2", color=rx.color("gray", 10)),
+            spacing="2",
+            align="center",
+        ),
+        rx.hstack(
+            rx.box(
+                width="18px",
+                height="18px",
+                border_radius="6px",
+                bg="linear-gradient(135deg, rgba(100, 116, 139, 0.20) 0%, rgba(100, 116, 139, 0.20) 72%, rgba(245, 158, 11, 0.70) 100%)",
+                border="1px solid rgba(148, 163, 184, 0.28)",
+            ),
+            rx.text("Amber corner = stronger switching / load change", size="2", color=rx.color("gray", 10)),
+            spacing="2",
+            align="center",
+        ),
+        spacing="4",
+        wrap="wrap",
+        width="100%",
+    )
+
+
+def heatmap_grid(rows, description: str) -> rx.Component:
+    return rx.vstack(
+        rx.text(description, size="2", color=rx.color("gray", 10)),
+        heatmap_legend(),
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.box(width="150px", min_width="150px"),
+                    rx.foreach(HEATMAP_HOURS, heatmap_hour_header),
+                    spacing="2",
+                    width="max-content",
+                ),
+                rx.foreach(rows, heatmap_row),
+                spacing="2",
+                width="max-content",
+                align="stretch",
+            ),
+            overflow_x="auto",
+            width="100%",
+        ),
+        spacing="3",
+        width="100%",
+        align="stretch",
+    )
+
+
+def heatmap_tab() -> rx.Component:
+    return rx.vstack(
+        rx.grid(
+            stat_card("Coverage", DashboardState.heatmap_days_text, "calendar_range", "blue", "Time-weighted hourly buckets"),
+            stat_card("Peak hour", DashboardState.heatmap_peak_text, "flame", "amber", "Highest average hourly use"),
+            stat_card("Load change", DashboardState.heatmap_change_text, "activity", "violet", "Most volatile hour window"),
+            stat_card("Weekly focus", DashboardState.heatmap_weekday_text, "chart_no_axes_combined", "green", "Busiest average weekday profile"),
+            columns="4",
+            spacing="4",
+            width="100%",
+        ),
+        panel(
+            "Recent Hourly Heatmap",
+            heatmap_grid(
+                DashboardState.heatmap_recent_rows,
+                "Rows are the most recent days. Each cell shows average net load for the hour, while the amber accent shows how jumpy that hour was.",
+            ),
+            icon="grid_3x3",
+        ),
+        panel(
+            "Weekly Pattern Heatmap",
+            heatmap_grid(
+                DashboardState.heatmap_weekday_rows,
+                "Rows collapse the same data by weekday so routines such as morning heating, evening cooking, or export windows become easier to spot.",
+            ),
+            icon="calendar_days",
+        ),
+        spacing="4",
+        width="100%",
+        align="stretch",
+    )
+
+
 def cost_row(row: dict[str, float | str]) -> rx.Component:
     return rx.table.row(
         rx.table.cell(row["hour"]),
@@ -838,20 +981,22 @@ def index() -> rx.Component:
                     rx.tabs.root(
                         rx.tabs.list(
                             rx.tabs.trigger("Overview", value="live"),
-                            rx.tabs.trigger("Analysis", value="analysis"),
-                            rx.tabs.trigger("Diagnostics", value="diagnostics"),
-                            rx.tabs.trigger("Daily", value="daily"),
-                            rx.tabs.trigger("Cost", value="cost"),
-                            rx.tabs.trigger("History", value="history"),
-                            rx.tabs.trigger("Log", value="log"),
-                        ),
-                        rx.tabs.content(live_tab(), value="live"),
-                        rx.tabs.content(analysis_tab(), value="analysis"),
-                        rx.tabs.content(diagnostics_tab(), value="diagnostics"),
-                        rx.tabs.content(daily_tab(), value="daily"),
-                        rx.tabs.content(cost_tab(), value="cost"),
-                        rx.tabs.content(history_tab(), value="history"),
-                        rx.tabs.content(log_tab(), value="log"),
+                        rx.tabs.trigger("Analysis", value="analysis"),
+                        rx.tabs.trigger("Diagnostics", value="diagnostics"),
+                        rx.tabs.trigger("Daily", value="daily"),
+                        rx.tabs.trigger("Heatmap", value="heatmap"),
+                        rx.tabs.trigger("Cost", value="cost"),
+                        rx.tabs.trigger("History", value="history"),
+                        rx.tabs.trigger("Log", value="log"),
+                    ),
+                    rx.tabs.content(live_tab(), value="live"),
+                    rx.tabs.content(analysis_tab(), value="analysis"),
+                    rx.tabs.content(diagnostics_tab(), value="diagnostics"),
+                    rx.tabs.content(daily_tab(), value="daily"),
+                    rx.tabs.content(heatmap_tab(), value="heatmap"),
+                    rx.tabs.content(cost_tab(), value="cost"),
+                    rx.tabs.content(history_tab(), value="history"),
+                    rx.tabs.content(log_tab(), value="log"),
                         default_value="live",
                         width="100%",
                     ),

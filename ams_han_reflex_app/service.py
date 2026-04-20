@@ -13,7 +13,7 @@ from .backend.protocol import is_gateway_protocol_line, mask_sensitive_command, 
 from .backend.serial_worker import SerialConfig, SerialManager
 from .backend.storage import SnapshotStore
 from .domain.analysis import (
-    analysis_summary, daily_graph_data, diagnose_issues, health_rows, history_rows,
+    analysis_summary, build_load_heatmaps, daily_graph_data, diagnose_issues, health_rows, history_rows,
     import_export_bar, parse_meter_dt, phase_analysis, signed_grid_w,
     top_hour_rows, unified_overview, what_changed,
 )
@@ -399,6 +399,7 @@ class GatewayService:
             if len(rows)>=limit: break
         return rows
     def daily_graph_data(self, limit: int=6000): return daily_graph_data(self._all_records_desc()[:limit])
+    def load_heatmaps(self, limit: int=6000): return build_load_heatmaps(self._all_records_desc()[:limit])
     def diagnostics_summary(self, limit:int=80, event_filter:str='all'):
         phase=self.phase_analysis(); events=self.event_tracker_rows(limit,event_filter); issues=diagnose_issues(events, phase, self.connection_status, self.wifi_status.state); health=health_rows(self.connection_status, self.wifi_status.state, self.mqtt_status.state, self.last_frame_seq, self.last_frame_len, self.latest_snapshot, len(self.event_log)); return {'issues':issues,'health':health,'phase':phase,'what_changed':what_changed(self.latest_snapshot, events)}
     def signature_rows(self, limit:int=12): return build_signature_rows(list(self.event_log), limit)

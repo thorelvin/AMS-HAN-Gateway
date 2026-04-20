@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import reflex as rx
 
+from .domain.analysis import HeatmapRow
 from .service import gateway_service
 
 class DashboardState(rx.State):
@@ -82,9 +83,15 @@ class DashboardState(rx.State):
     diagnostics_issues: list[str] = []
     health_rows: list[dict[str, str]] = []
     daily_graph_rows: list[dict[str, float | str]] = []
+    heatmap_recent_rows: list[HeatmapRow] = []
+    heatmap_weekday_rows: list[HeatmapRow] = []
     daily_date_text: str = 'No daily data'
     daily_peak_text: str = 'No daily peak yet'
     daily_hours_text: str = '0 populated hours'
+    heatmap_days_text: str = '0 days in heatmap'
+    heatmap_peak_text: str = 'No hourly load peak yet'
+    heatmap_change_text: str = 'No load-change spikes yet'
+    heatmap_weekday_text: str = 'No weekday pattern yet'
     db_count: int = 0
     avg_import_text: str = '0.0 W avg import'
     avg_net_text: str = '0.0 W avg net'
@@ -221,6 +228,7 @@ class DashboardState(rx.State):
         p = gateway_service.phase_analysis(max(limit,1)); self.phase_latest_text=p['phase_latest_text']; self.phase_avg_text=p['phase_avg_text']; self.phase_dominant_text=p['phase_dominant_text']; self.phase_imbalance_text=p['phase_imbalance_text']; self.voltage_latest_text=p['voltage_latest_text']; self.voltage_avg_text=p['voltage_avg_text']; self.voltage_min_text=p['voltage_min_text']; self.voltage_spread_text=p['voltage_spread_text']
         self.top_hour_rows = gateway_service.top_hour_rows(max(limit,1)*10, top_n=8)
         d = gateway_service.daily_graph_data(max(limit,1)*20); self.daily_graph_rows=d['rows']; self.daily_date_text=d['date_text']; self.daily_hours_text=d['hours_text']; self.daily_peak_text=d['peak_text']
+        h = gateway_service.load_heatmaps(max(limit,1)*20); self.heatmap_recent_rows=h['recent_rows']; self.heatmap_weekday_rows=h['weekday_rows']; self.heatmap_days_text=h['day_count_text']; self.heatmap_peak_text=h['peak_hour_text']; self.heatmap_change_text=h['change_peak_text']; self.heatmap_weekday_text=h['weekday_focus_text']
         self.signature_rows = gateway_service.signature_rows(12)
     def refresh_diagnostics(self):
         diag = gateway_service.diagnostics_summary(80, self.event_filter)
