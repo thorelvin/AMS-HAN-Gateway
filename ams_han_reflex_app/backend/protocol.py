@@ -18,6 +18,13 @@ SENSITIVE_INDEXES = {
     "SET_MQTT": {4},
 }
 
+GATEWAY_PROTOCOL_PREFIXES = (
+    "RSP:",
+    "STATUS,",
+    "FRAME,",
+    "SNAP,",
+)
+
 
 def build_command(*parts: object) -> str:
     return ",".join(str(part) for part in parts if part is not None)
@@ -40,6 +47,11 @@ def mask_sensitive_command(command: str) -> str:
         if idx < len(parts):
             parts[idx] = "***"
     return ",".join(parts)
+
+
+def is_gateway_protocol_line(line: str) -> bool:
+    raw = line.rstrip("\r\n")
+    return raw.startswith(GATEWAY_PROTOCOL_PREFIXES)
 
 
 def list_supported_commands() -> Iterable[str]:

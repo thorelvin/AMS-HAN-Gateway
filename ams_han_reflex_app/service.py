@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from .backend.models import DeviceInfo, HistoryRecord, MqttStatus, ParsedLine, SnapshotEvent, WifiStatus
-from .backend.protocol import mask_sensitive_command, parse_line
+from .backend.models import DeviceInfo, HistoryRecord, MqttStatus, ParsedLine, SnapshotEvent, StatusLine, WifiStatus
+from .backend.protocol import is_gateway_protocol_line, mask_sensitive_command, parse_line
 from .backend.serial_worker import SerialConfig, SerialManager
 from .backend.storage import SnapshotStore
 from .domain.analysis import (
@@ -29,6 +30,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'price_area':'NO3', 'grid_day_rate':GRID_DAY_RATE_NOK_PER_KWH, 'grid_night_rate':GRID_NIGHT_RATE_NOK_PER_KWH,
     'event_filter':'all', 'replay_path':'', 'replay_lines_per_tick':4,
 }
+
+PROBE_TIMEOUT_S = 2.6
+PROBE_RETRY_INTERVAL_S = 0.45
 
 class GatewayService:
     def __init__(self, db_path: Path) -> None:
@@ -115,17 +119,21 @@ class GatewayService:
 
     def _probe_port(self, port: str, baudrate: int) -> bool:
         try:
-            temp=[]
             import serial as pyserial
-            with pyserial.Serial(port, baudrate, timeout=0.25) as ser:
-                ser.write(b'GET_INFO\n'); ser.flush()
-                end = datetime.now().timestamp()+1.2
-                while datetime.now().timestamp() < end:
+            with pyserial.Serial(port, baudrate, timeout=0.25, write_timeout=0.25) as ser:
+                SerialManager._stabilize_port(ser)
+                end = time.monotonic() + PROBE_TIMEOUT_S
+                next_probe = 0.0
+                while time.monotonic() < end:
+                    now = time.monotonic()
+                    if now >= next_probe:
+                        for cmd in (b'GET_INFO\n', b'GET_STATUS\n'):
+                            ser.write(cmd)
+                        ser.flush()
+                        next_probe = now + PROBE_RETRY_INTERVAL_S
                     line = ser.readline().decode('utf-8', errors='replace').strip()
-                    if line:
-                        temp.append(line)
-                        if line.startswith('RSP:INFO,'):
-                            return True
+                    if line and is_gateway_protocol_line(line):
+                        return True
             return False
         except Exception:
             return False
@@ -239,6 +247,17 @@ class GatewayService:
             self.wifi_status = parsed.payload
         elif parsed.kind == 'mqtt_status':
             self.mqtt_status = parsed.payload
+        elif parsed.kind == 'status':
+            status = parsed.payload
+            if isinstance(status, StatusLine):
+                if status.category == 'WIFI':
+                    self.wifi_status = WifiStatus(state=status.state, ip=status.extra)
+                elif status.category == 'MQTT':
+                    self.mqtt_status = MqttStatus(state=status.state)
+                elif status.category == 'HAN' and status.extra:
+                    self._append_log('INFO', f'HAN status: {status.state} ({status.extra})')
+                elif status.category == 'HAN':
+                    self._append_log('INFO', f'HAN status: {status.state}')
         elif parsed.kind == 'frame':
             self.last_frame_seq = parsed.payload.sequence
             self.last_frame_len = parsed.payload.length
@@ -261,6 +280,8 @@ class GatewayService:
                 self.event_log.appendleft(row)
                 self.event_log_store.mark_dirty()
             self._save_event_log(False)
+        elif parsed.kind == 'parse_error':
+            self._append_log('WARN', parsed.error or f'Parse error: {parsed.raw}')
         elif parsed.kind == 'error':
             self._append_log('ERR', parsed.error or 'Protocol error')
         self._invalidate_data_cache(); self._invalidate_event_cache()

@@ -18,6 +18,8 @@ class SerialConfig:
 
 
 class SerialManager:
+    STARTUP_GRACE_S = 0.8
+
     def __init__(self, on_line: Callable[[str], None], on_state: Callable[[bool, str], None]) -> None:
         self._on_line = on_line
         self._on_state = on_state
@@ -34,12 +36,35 @@ class SerialManager:
     def connected(self) -> bool:
         return self._serial is not None and self._serial.is_open
 
+    @staticmethod
+    def _stabilize_port(ser: serial.Serial, startup_grace_s: float | None = None) -> None:
+        grace = SerialManager.STARTUP_GRACE_S if startup_grace_s is None else startup_grace_s
+        # Many ESP32 USB-UART dev boards pulse reset on port open. Give the MCU a
+        # moment to boot and clear any boot chatter before the dashboard starts its handshake.
+        for attr in ("dtr", "rts"):
+            try:
+                setattr(ser, attr, False)
+            except (AttributeError, OSError, serial.SerialException, ValueError):
+                pass
+        try:
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+        except (AttributeError, OSError, serial.SerialException):
+            pass
+        if grace > 0:
+            time.sleep(grace)
+        try:
+            ser.reset_input_buffer()
+        except (AttributeError, OSError, serial.SerialException):
+            pass
+
     def connect(self, config: SerialConfig) -> None:
         if self.connected:
             self.disconnect()
         self._clear_tx_queue()
         self._stop.clear()
-        self._serial = serial.Serial(config.port, config.baudrate, timeout=config.timeout)
+        self._serial = serial.Serial(config.port, config.baudrate, timeout=config.timeout, write_timeout=config.timeout)
+        self._stabilize_port(self._serial)
         self._thread = threading.Thread(target=self._worker, name="serial-worker", daemon=True)
         self._thread.start()
         self._on_state(True, f"Connected to {config.port}")
