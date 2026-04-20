@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from statistics import median
 from typing import Any
 
 
@@ -19,6 +20,22 @@ def likely_device_hint(delta_w: float, phase: str, sustained: bool = False) -> s
     return 'Minor load change'
 
 
+def _parse_delta_w(event: dict[str, Any]) -> float | None:
+    raw = event.get('dW', event.get('delta_signed'))
+    if raw in (None, '', '-'):
+        return None
+    try:
+        return float(str(raw).replace('W', '').strip())
+    except ValueError:
+        return None
+
+
+def _format_signature_watt(deltas: list[float]) -> str:
+    if not deltas:
+        return '-'
+    return f'{median(deltas):.0f} W'
+
+
 def build_signature_rows(events: list[dict[str, str]], limit: int = 10) -> list[dict[str, str]]:
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for e in events:
@@ -31,12 +48,16 @@ def build_signature_rows(events: list[dict[str, str]], limit: int = 10) -> list[
     rows = []
     for key, items in grouped.items():
         phase, note = key.split('|', 1)
+        deltas = [abs(delta) for delta in (_parse_delta_w(item) for item in items) if delta is not None]
+        typical_w_value = median(deltas) if deltas else 0.0
         rows.append({
             'signature': note,
             'phase': phase,
+            'typical_w': _format_signature_watt(deltas),
+            'typical_w_value': f'{typical_w_value:.3f}',
             'events': str(len(items)),
             'last_seen': items[0].get('time', '-'),
-            'confidence': items[0].get('confidence', '0.50'),
+            'confidence': items[0].get('conf', items[0].get('confidence', '0.50')),
         })
-    rows.sort(key=lambda r: int(r['events']), reverse=True)
+    rows.sort(key=lambda r: (int(r['events']), float(r['typical_w_value'])), reverse=True)
     return rows[:limit]

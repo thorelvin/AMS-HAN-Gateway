@@ -340,6 +340,7 @@ def signature_row(row: dict[str, str]) -> rx.Component:
     return rx.table.row(
         rx.table.cell(row["signature"]),
         rx.table.cell(row["phase"]),
+        rx.table.cell(row["typical_w"]),
         rx.table.cell(row["events"]),
         rx.table.cell(row["last_seen"]),
         rx.table.cell(row["confidence"]),
@@ -382,6 +383,7 @@ def analysis_tab() -> rx.Component:
                     rx.table.row(
                         rx.table.column_header_cell("Signature"),
                         rx.table.column_header_cell("Phase"),
+                        rx.table.column_header_cell("Typical W"),
                         rx.table.column_header_cell("Events"),
                         rx.table.column_header_cell("Last Seen"),
                         rx.table.column_header_cell("Confidence"),
