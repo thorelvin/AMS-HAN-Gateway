@@ -2,10 +2,15 @@ import sys
 from datetime import datetime
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ams_han_reflex_app.domain.pricing import PriceDayResult, PriceProvider
+from ams_han_reflex_app.domain.pricing import (
+    PRICE_REQUEST_HEADERS,
+    PriceDayResult,
+    PriceProvider,
+)
 
 
 class _BackgroundAwarePriceProvider(PriceProvider):
@@ -45,6 +50,35 @@ class PricingTest(unittest.TestCase):
         self.assertFalse(quote.fallback_used)
         self.assertAlmostEqual(quote.nok_per_kwh, 0.834)
         self.assertEqual(provider.started, [])
+
+    def test_fetch_day_sends_explicit_request_headers(self):
+        provider = PriceProvider()
+        target = datetime(2026, 4, 21, 10, 30)
+        observed_headers: dict[str, str | None] = {}
+
+        class _Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'[{"time_start":"2026-04-21T10:00:00+02:00","NOK_per_kWh":0.834}]'
+
+        def fake_urlopen(request, timeout):
+            observed_headers["User-Agent"] = request.get_header("User-agent")
+            observed_headers["Accept"] = request.get_header("Accept")
+            self.assertEqual(timeout, 6)
+            return _Response()
+
+        with patch("ams_han_reflex_app.domain.pricing.urlopen", side_effect=fake_urlopen):
+            result = provider._fetch_day("NO3", target)
+
+        self.assertEqual(result.warning_text, "")
+        self.assertEqual(len(result.entries), 1)
+        self.assertEqual(observed_headers["User-Agent"], PRICE_REQUEST_HEADERS["User-Agent"])
+        self.assertEqual(observed_headers["Accept"], PRICE_REQUEST_HEADERS["Accept"])
 
 
 if __name__ == "__main__":

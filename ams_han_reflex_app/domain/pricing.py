@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 import json
 import threading
 
@@ -11,6 +11,10 @@ PRICE_AREAS = ['NO1', 'NO2', 'NO3', 'NO4', 'NO5']
 GRID_DAY_RATE_NOK_PER_KWH = 0.4254
 GRID_NIGHT_RATE_NOK_PER_KWH = 0.2642
 FALLBACK_SPOT_PRICE_NOK_PER_KWH = 1.0
+PRICE_REQUEST_HEADERS = {
+    'User-Agent': 'AMS-HAN-Gateway/1.0 (+https://github.com/thorelvin/AMS-HAN-Gateway)',
+    'Accept': 'application/json',
+}
 CAPACITY_STEPS = [
     (2.0, '0-2 kW', 150),
     (5.0, '2-5 kW', 270),
@@ -56,7 +60,8 @@ class PriceProvider:
         data: list[dict[str, Any]] = []
         warning_text = ''
         try:
-            with urlopen(url, timeout=6) as response:
+            request = Request(url, headers=PRICE_REQUEST_HEADERS)
+            with urlopen(request, timeout=6) as response:
                 payload = json.loads(response.read().decode('utf-8'))
                 if isinstance(payload, list):
                     data = payload
