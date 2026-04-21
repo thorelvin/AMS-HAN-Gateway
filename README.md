@@ -137,7 +137,7 @@ How to read each heatmap cell:
 - `L x/y/z` is the count of **load switches assigned to `L1/L2/L3`** in that hour.
 - `3P n` is the count of **balanced 3-phase switch events** in that hour.
 - The **blue/green background** shows whether the hour was import-heavy or export-heavy overall.
-- The **amber corner** shows stronger switching activity during that hour.
+- The **corner accent** is hidden for quiet hours, then steps from **yellow** to **orange** to **red** as switching activity increases.
 
 The `Load switch threshold` dropdown controls which signed power changes are counted as switches. The default is `300 W`, but the user can raise or lower the threshold from `100 W` to `1500 W` depending on whether the goal is to catch small appliance changes or only larger load steps.
 
