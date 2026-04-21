@@ -56,7 +56,7 @@ The domain layer is responsible for turning raw measurements into operator-facin
 
 ### 4. Reflex UI
 
-`ams_han_reflex_app/ams_han_reflex_app.py` and `state.py` provide the local web interface. The current interface includes:
+`ams_han_reflex_app/ams_han_reflex_app.py` together with `state.py` and the split `state_parts/` modules provide the local web interface. The current interface includes:
 
 - a live overview with snapshot and device status
 - analysis panels for phase and voltage behavior
@@ -148,6 +148,7 @@ Recent work has improved the repository with:
 - heatmap switch-threshold filtering and clearer switching-intensity visualization
 - explicit cost-source warnings instead of silent spot-price fallback
 - extracted firmware source tree for normal diffs, search, and review
+- split Reflex state composition across feature-focused `state_parts/` modules instead of one large implementation file
 - replay-driven service workflow coverage in the automated tests
 - explicit escaped command encoding on the Python side together with firmware-side unescaping and validation
 - one-command local launch path via `python scripts/run_dashboard.py`

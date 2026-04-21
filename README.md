@@ -269,6 +269,7 @@ Architecture rules for those boundaries are documented in [docs/ARCHITECTURE_BOU
 |   |-- app_context.py
 |   |-- service.py
 |   |-- state.py
+|   |-- state_parts/
 |   |-- backend/
 |   |-- domain/
 |   |-- services/
@@ -287,7 +288,7 @@ Architecture rules for those boundaries are documented in [docs/ARCHITECTURE_BOU
 `-- rxconfig.py
 ```
 
-- `ams_han_reflex_app/` contains the Reflex UI, service coordination, parsing, diagnostics, pricing, and replay support.
+- `ams_han_reflex_app/` contains the Reflex UI, state composition, service coordination, parsing, diagnostics, pricing, and replay support.
 - `docs/ARCHITECTURE_BOUNDARIES.md` documents intended layer boundaries and allowed dependency direction.
 - `docs/images/` contains README screenshots and hardware reference images.
 - `firmware/esp_idf_ams_han_gateway_wroom32d/` contains the ESP-IDF firmware project for the ESP32 gateway in a reviewable source layout.
