@@ -92,6 +92,7 @@ class DashboardState(rx.State):
     heatmap_peak_text: str = 'No hourly load peak yet'
     heatmap_change_text: str = 'No load-change spikes yet'
     heatmap_weekday_text: str = 'No weekday pattern yet'
+    current_tab: str = 'live'
     db_count: int = 0
     avg_import_text: str = '0.0 W avg import'
     avg_net_text: str = '0.0 W avg net'
@@ -126,7 +127,9 @@ class DashboardState(rx.State):
     def on_load(self):
         self._slow_counter = 0
         self.refresh_ports()
-        self.sync_from_service(force_heavy=True)
+        self.sync_from_service(force_heavy=False)
+        self.refresh_live_metrics()
+        self.refresh_tab_data()
         if gateway_service.serial.connected:
             self.auto_connect_message = gateway_service.connection_status
         elif gateway_service.replay_summary().get('loaded'):
@@ -142,7 +145,11 @@ class DashboardState(rx.State):
         self._slow_counter += 1
         if self._slow_counter % 9 == 0:
             self.refresh_ports()
-        self.sync_from_service(force_heavy=(self._slow_counter % 3 == 0))
+        self.sync_from_service(force_heavy=False)
+        if self._slow_counter % 3 == 0:
+            self.refresh_live_metrics()
+        if self.current_tab in ('analysis', 'daily', 'heatmap', 'diagnostics', 'history', 'cost') and self._slow_counter % 6 == 0:
+            self.refresh_tab_data()
 
     def sync_from_service(self, force_heavy: bool = False):
         self.connection_status = gateway_service.connection_status
@@ -166,7 +173,8 @@ class DashboardState(rx.State):
         replay = gateway_service.replay_summary(); self.replay_status_text=str(replay['status_text']); self.replay_progress_text=str(replay['progress_text']); self.replay_source_text=str(replay['source_name'] or '-')
         self.logs = gateway_service.logs_list()
         if force_heavy:
-            self.refresh_history(); self.refresh_analysis(); self.refresh_cost(); self.refresh_diagnostics()
+            self.refresh_live_metrics()
+            self.refresh_tab_data()
 
     def refresh_ports(self):
         self.ports = gateway_service.list_ports(); preferred = gateway_service.preferred_port_label();
@@ -199,6 +207,9 @@ class DashboardState(rx.State):
         gateway_service.settings['heatmap_switch_threshold'] = threshold
         gateway_service._save_settings()
         self.refresh_analysis()
+    def set_current_tab(self, value: str):
+        self.current_tab = value
+        self.refresh_tab_data()
     def set_replay_path(self, value:str): self.replay_path=value
 
     def toggle_advanced(self):
@@ -226,14 +237,21 @@ class DashboardState(rx.State):
     def mqtt_disable(self): gateway_service.send_command('MQTT_DISABLE'); self.sync_from_service()
     def republish_discovery(self): gateway_service.send_command('REPUBLISH_DISCOVERY'); self.sync_from_service()
 
+    def refresh_history_summary(self):
+        limit=int(self.history_limit or '200') if (self.history_limit or '200').isdigit() else 200
+        s = gateway_service.get_summary(max(limit,1))
+        self.db_count=s['count']; self.avg_import_text=f"{s['avg_import_w']:.1f} W avg import"; self.avg_net_text=f"{s['avg_net_w']:.1f} W avg net"; self.peak_text=f"{s['max_import_w']:.1f} W max import | {s['min_net_w']:.1f}/{s['max_net_w']:.1f} W net"; self.latest_history_text=s['latest_received_at']
     def refresh_history(self):
         limit=int(self.history_limit or '200') if (self.history_limit or '200').isdigit() else 200
         self.history_rows = gateway_service.get_history_rows(limit)
-        s = gateway_service.get_summary(max(limit,1))
-        self.db_count=s['count']; self.avg_import_text=f"{s['avg_import_w']:.1f} W avg import"; self.avg_net_text=f"{s['avg_net_w']:.1f} W avg net"; self.peak_text=f"{s['max_import_w']:.1f} W max import | {s['min_net_w']:.1f}/{s['max_net_w']:.1f} W net"; self.latest_history_text=s['latest_received_at']
+        self.refresh_history_summary()
+    def refresh_live_metrics(self):
+        limit=int(self.history_limit or '200') if (self.history_limit or '200').isdigit() else 200
+        self.refresh_history_summary()
+        a = gateway_service.analysis_summary(max(limit,1)*5); self.signed_avg_text=a['signed_avg_text']; self.current_hour_text=a['current_hour_text']; self.projected_hour_text=a['projected_hour_text']; self.import_peak_text=a['import_peak_text']; self.export_peak_text=a['export_peak_text']; self.import_samples_text=a['import_samples_text']; self.export_samples_text=a['export_samples_text']
     def refresh_analysis(self):
         limit=int(self.history_limit or '200') if (self.history_limit or '200').isdigit() else 200
-        a = gateway_service.analysis_summary(max(limit,1)*5); self.signed_avg_text=a['signed_avg_text']; self.current_hour_text=a['current_hour_text']; self.projected_hour_text=a['projected_hour_text']; self.import_peak_text=a['import_peak_text']; self.export_peak_text=a['export_peak_text']; self.import_samples_text=a['import_samples_text']; self.export_samples_text=a['export_samples_text']
+        self.refresh_live_metrics()
         p = gateway_service.phase_analysis(max(limit,1)); self.phase_latest_text=p['phase_latest_text']; self.phase_avg_text=p['phase_avg_text']; self.phase_dominant_text=p['phase_dominant_text']; self.phase_imbalance_text=p['phase_imbalance_text']; self.voltage_latest_text=p['voltage_latest_text']; self.voltage_avg_text=p['voltage_avg_text']; self.voltage_min_text=p['voltage_min_text']; self.voltage_spread_text=p['voltage_spread_text']
         self.top_hour_rows = gateway_service.top_hour_rows(max(limit,1)*10, top_n=8)
         d = gateway_service.daily_graph_data(max(limit,1)*20); self.daily_graph_rows=d['rows']; self.daily_date_text=d['date_text']; self.daily_hours_text=d['hours_text']; self.daily_peak_text=d['peak_text']
@@ -245,6 +263,15 @@ class DashboardState(rx.State):
         self.diagnostics_issues = diag['issues']; self.health_rows = diag['health']; self.event_rows = gateway_service.event_tracker_rows(120, self.event_filter)
     def refresh_cost(self):
         c = gateway_service.cost_summary(12000); self.cost_source_text=c['source_text']; self.spot_now_text=c['spot_now_text']; self.grid_now_text=c['grid_now_text']; self.total_now_text=c['total_now_text']; self.import_cost_now_text=c['import_cost_now_text']; self.export_value_now_text=c['export_value_now_text']; self.daily_import_cost_text=c['daily_import_cost_text']; self.daily_export_value_text=c['daily_export_value_text']; self.daily_net_cost_text=c['daily_net_cost_text']; self.current_hour_cost_text=c['current_hour_cost_text']; self.capacity_step_text=c['capacity_step_text']; self.capacity_price_text=c['capacity_price_text']; self.capacity_basis_text=c['capacity_basis_text']; self.capacity_warning_text=c['capacity_warning_text']; self.cost_rows=c['rows']
+    def refresh_tab_data(self):
+        if self.current_tab == 'history':
+            self.refresh_history()
+        elif self.current_tab == 'diagnostics':
+            self.refresh_diagnostics()
+        elif self.current_tab == 'cost':
+            self.refresh_cost()
+        elif self.current_tab in ('analysis', 'daily', 'heatmap'):
+            self.refresh_analysis()
     def apply_cost_settings(self):
         try: day=float(self.grid_day_rate or '0')
         except ValueError: day=0.4254; self.grid_day_rate=str(day)
