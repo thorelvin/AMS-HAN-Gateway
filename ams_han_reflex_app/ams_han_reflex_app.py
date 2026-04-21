@@ -355,6 +355,10 @@ def signature_row(row: dict[str, str]) -> rx.Component:
         rx.table.cell(row["phase"]),
         rx.table.cell(row["typical_w"]),
         rx.table.cell(row["events"]),
+        rx.table.cell(row["avg_runtime"]),
+        rx.table.cell(row["starts_per_day"]),
+        rx.table.cell(row["common_start_hour"]),
+        rx.table.cell(row["weekday_weekend"]),
         rx.table.cell(row["last_seen"]),
         rx.table.cell(row["confidence"]),
     )
@@ -391,21 +395,39 @@ def analysis_tab() -> rx.Component:
         phase_analysis_panel(),
         panel(
             "Load Signatures",
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("Signature"),
-                        rx.table.column_header_cell("Phase"),
-                        rx.table.column_header_cell("Typical W"),
-                        rx.table.column_header_cell("Events"),
-                        rx.table.column_header_cell("Last Seen"),
-                        rx.table.column_header_cell("Confidence"),
-                    )
+            rx.vstack(
+                rx.text(
+                    "Recurring signatures now include duty-cycle hints: average runtime, starts per day, common start hour, and weekday versus weekend frequency.",
+                    size="2",
+                    color=rx.color("gray", 10),
                 ),
-                rx.table.body(rx.foreach(DashboardState.signature_rows, signature_row)),
-                variant="surface",
-                size="2",
+                rx.box(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Signature"),
+                                rx.table.column_header_cell("Phase"),
+                                rx.table.column_header_cell("Typical W"),
+                                rx.table.column_header_cell("Events"),
+                                rx.table.column_header_cell("Avg Runtime"),
+                                rx.table.column_header_cell("Starts/Day"),
+                                rx.table.column_header_cell("Common Start"),
+                                rx.table.column_header_cell("Weekday / Weekend"),
+                                rx.table.column_header_cell("Last Seen"),
+                                rx.table.column_header_cell("Confidence"),
+                            )
+                        ),
+                        rx.table.body(rx.foreach(DashboardState.signature_rows, signature_row)),
+                        variant="surface",
+                        size="2",
+                        width="100%",
+                    ),
+                    overflow_x="auto",
+                    width="100%",
+                ),
+                spacing="3",
                 width="100%",
+                align="stretch",
             ),
             icon="fingerprint",
         ),

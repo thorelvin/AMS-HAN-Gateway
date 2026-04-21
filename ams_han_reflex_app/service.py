@@ -402,7 +402,19 @@ class GatewayService:
     def load_heatmaps(self, limit: int=6000, switch_threshold_w: float = 300.0): return build_load_heatmaps(self._all_records_desc()[:limit], switch_threshold_w=switch_threshold_w)
     def diagnostics_summary(self, limit:int=80, event_filter:str='all'):
         phase=self.phase_analysis(); events=self.event_tracker_rows(limit,event_filter); issues=diagnose_issues(events, phase, self.connection_status, self.wifi_status.state); health=health_rows(self.connection_status, self.wifi_status.state, self.mqtt_status.state, self.last_frame_seq, self.last_frame_len, self.latest_snapshot, len(self.event_log)); return {'issues':issues,'health':health,'phase':phase,'what_changed':what_changed(self.latest_snapshot, events)}
-    def signature_rows(self, limit:int=12): return build_signature_rows(list(self.event_log), limit)
+    def _signature_observed_dates(self, limit: int = 6000) -> list[str]:
+        observed: list[str] = []
+        seen: set[str] = set()
+        for record in self._all_records_desc()[:limit]:
+            ts = str(record.snapshot.timestamp or '')
+            day_text = ts[:10] if len(ts) >= 10 else ''
+            if day_text and day_text not in seen:
+                seen.add(day_text)
+                observed.append(day_text)
+        return observed
+    def signature_rows(self, limit:int=12, coverage_limit: int = 6000):
+        key = self._cache_key('signature_rows', limit, coverage_limit)
+        return self._cache_get_or_set(key, lambda: build_signature_rows(list(self.event_log), limit, observed_dates=self._signature_observed_dates(coverage_limit)))
 
     # Cost integration
     def save_cost_settings(self, *, price_area:str, grid_day_rate:float, grid_night_rate:float):

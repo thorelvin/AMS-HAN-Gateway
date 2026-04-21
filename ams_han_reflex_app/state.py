@@ -257,7 +257,7 @@ class DashboardState(rx.State):
         d = gateway_service.daily_graph_data(max(limit,1)*20); self.daily_graph_rows=d['rows']; self.daily_date_text=d['date_text']; self.daily_hours_text=d['hours_text']; self.daily_peak_text=d['peak_text']
         threshold = int(self.heatmap_switch_threshold or '300') if (self.heatmap_switch_threshold or '300').isdigit() else 300
         h = gateway_service.load_heatmaps(max(limit,1)*20, switch_threshold_w=threshold); self.heatmap_recent_rows=h['recent_rows']; self.heatmap_weekday_rows=h['weekday_rows']; self.heatmap_days_text=h['day_count_text']; self.heatmap_peak_text=h['peak_hour_text']; self.heatmap_change_text=h['change_peak_text']; self.heatmap_weekday_text=h['weekday_focus_text']
-        self.signature_rows = gateway_service.signature_rows(12)
+        self.signature_rows = gateway_service.signature_rows(12, coverage_limit=max(limit,1)*20)
     def refresh_diagnostics(self):
         diag = gateway_service.diagnostics_summary(80, self.event_filter)
         self.diagnostics_issues = diag['issues']; self.health_rows = diag['health']; self.event_rows = gateway_service.event_tracker_rows(120, self.event_filter)

@@ -94,14 +94,21 @@ Each row represents a recurring pattern seen in the event engine:
 - **Phase** shows whether the pattern is mostly tied to `L1`, `L2`, `L3`, or is not yet phase-specific.
 - **Typical W** gives the representative watt size of that signature, making it much easier to identify whether the change looks like a panel heater, water heater, kitchen appliance, EV-related load step, or a small background consumer.
 - **Events** shows how many times that pattern has been observed.
+- **Avg Runtime** shows the average session length for signatures that produce clear start and end events.
+- **Starts/Day** shows how often that signature begins across the observed history window.
+- **Common Start** highlights the hour where that signature most often begins.
+- **Weekday / Weekend** compares the per-day start frequency on weekdays versus weekends, which helps expose habits such as morning heating, weekend cooking, or evening EV charging.
 - **Last Seen** helps confirm whether the device is currently active or was only present earlier in the session.
 - **Confidence** shows how stable the classification is based on the samples collected so far.
+
+Short step-like signatures may still show `-` for runtime if the data contains sharp power changes without a full load-session start/end pair.
 
 Why this matters:
 
 - It helps translate repeated import jumps into likely real household devices instead of forcing the user to interpret every power step manually.
 - It makes troubleshooting faster when you are trying to find what caused a peak, phase imbalance, or a suspicious load session.
 - It gives a practical bridge between raw HAN telemetry and energy optimization, because identifying a recurring `2500 W` to `2700 W` heater-like load is much more actionable than only seeing that import increased.
+- It adds routine analysis, so recurring loads can be understood not just by size but also by timing, duty cycle, and weekday-versus-weekend behavior.
 - It becomes more useful over time as the dashboard sees more repeated patterns in live traffic or replay logs.
 
 ### Diagnostics tab
