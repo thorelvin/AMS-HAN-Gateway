@@ -9,6 +9,7 @@ from .state import DashboardState
 UPLOAD_ID = "replay_upload"
 LIVE_SYNC_INTERVAL_MS = 2000
 HEATMAP_HOURS = [f"{hour:02d}" for hour in range(24)]
+HEATMAP_SWITCH_THRESHOLDS = [str(watts) for watts in range(100, 1600, 100)]
 
 
 def live_heartbeat() -> rx.Component:
@@ -600,13 +601,14 @@ def heatmap_cell(cell) -> rx.Component:
         rx.vstack(
             rx.text(cell.primary, size="2", weight="bold", color=cell.text_color, line_height="1.1"),
             rx.text(cell.secondary, size="1", color=cell.secondary_color, line_height="1.15"),
+            rx.text(cell.tertiary, size="1", color=cell.secondary_color, line_height="1.15"),
             spacing="1",
             align="start",
             width="100%",
         ),
         width="68px",
         min_width="68px",
-        min_height="70px",
+        min_height="82px",
         padding="0.55em",
         border_radius="14px",
         bg=cell.bg,
@@ -700,17 +702,50 @@ def heatmap_tab() -> rx.Component:
         rx.grid(
             stat_card("Coverage", DashboardState.heatmap_days_text, "calendar_range", "blue", "Time-weighted hourly buckets"),
             stat_card("Peak hour", DashboardState.heatmap_peak_text, "flame", "amber", "Highest average hourly use"),
-            stat_card("Load change", DashboardState.heatmap_change_text, "activity", "violet", "Most volatile hour window"),
+            stat_card("Switch activity", DashboardState.heatmap_change_text, "activity", "violet", "Most switch-active hour at selected threshold"),
             stat_card("Weekly focus", DashboardState.heatmap_weekday_text, "chart_no_axes_combined", "green", "Busiest average weekday profile"),
             columns="4",
             spacing="4",
             width="100%",
         ),
         panel(
+            "Heatmap Settings",
+            rx.hstack(
+                rx.vstack(
+                    rx.text("Load switch threshold", size="2", color=rx.color("gray", 10)),
+                    rx.text(
+                        "Counts signed power changes at or above the selected watt level and assigns them to L1, L2, L3, or 3-phase using phase-current deltas.",
+                        size="2",
+                        color=rx.color("gray", 10),
+                    ),
+                    align="start",
+                    spacing="1",
+                    width="100%",
+                ),
+                rx.hstack(
+                    rx.select(
+                        HEATMAP_SWITCH_THRESHOLDS,
+                        value=DashboardState.heatmap_switch_threshold,
+                        on_change=DashboardState.set_heatmap_switch_threshold,
+                        width="120px",
+                    ),
+                    rx.text("W", size="3", weight="medium"),
+                    spacing="2",
+                    align="center",
+                ),
+                spacing="4",
+                width="100%",
+                justify="between",
+                align="center",
+                wrap="wrap",
+            ),
+            icon="sliders_horizontal",
+        ),
+        panel(
             "Recent Hourly Heatmap",
             heatmap_grid(
                 DashboardState.heatmap_recent_rows,
-                "Rows are the most recent days. Each cell shows average net load for the hour, while the amber accent shows how jumpy that hour was.",
+                "Rows are the most recent days. Each cell shows average net load for the hour, then L1/L2/L3 switch counts and 3P switch count for the selected threshold.",
             ),
             icon="grid_3x3",
         ),
@@ -718,7 +753,7 @@ def heatmap_tab() -> rx.Component:
             "Weekly Pattern Heatmap",
             heatmap_grid(
                 DashboardState.heatmap_weekday_rows,
-                "Rows collapse the same data by weekday so routines such as morning heating, evening cooking, or export windows become easier to spot.",
+                "Rows collapse the same data by weekday so routines such as morning heating, evening cooking, or export windows become easier to spot across repeated weeks.",
             ),
             icon="calendar_days",
         ),

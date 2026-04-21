@@ -114,6 +114,7 @@ class DashboardState(rx.State):
     voltage_avg_text: str = 'No voltage averages yet'
     voltage_min_text: str = 'No voltage minimums yet'
     voltage_spread_text: str = '0.0 V worst phase spread'
+    heatmap_switch_threshold: str = str(gateway_service.settings.get('heatmap_switch_threshold', 300))
 
     event_filter: str = str(gateway_service.settings.get('event_filter', 'all'))
     logs: list[str] = []
@@ -190,6 +191,14 @@ class DashboardState(rx.State):
     def set_event_filter(self, value:str):
         self.event_filter = value
         self.refresh_diagnostics()
+    def set_heatmap_switch_threshold(self, value:str):
+        cleaned = ''.join(ch for ch in str(value) if ch.isdigit())
+        threshold = int(cleaned) if cleaned else 300
+        threshold = max(100, min(1500, threshold))
+        self.heatmap_switch_threshold = str(threshold)
+        gateway_service.settings['heatmap_switch_threshold'] = threshold
+        gateway_service._save_settings()
+        self.refresh_analysis()
     def set_replay_path(self, value:str): self.replay_path=value
 
     def toggle_advanced(self):
@@ -228,7 +237,8 @@ class DashboardState(rx.State):
         p = gateway_service.phase_analysis(max(limit,1)); self.phase_latest_text=p['phase_latest_text']; self.phase_avg_text=p['phase_avg_text']; self.phase_dominant_text=p['phase_dominant_text']; self.phase_imbalance_text=p['phase_imbalance_text']; self.voltage_latest_text=p['voltage_latest_text']; self.voltage_avg_text=p['voltage_avg_text']; self.voltage_min_text=p['voltage_min_text']; self.voltage_spread_text=p['voltage_spread_text']
         self.top_hour_rows = gateway_service.top_hour_rows(max(limit,1)*10, top_n=8)
         d = gateway_service.daily_graph_data(max(limit,1)*20); self.daily_graph_rows=d['rows']; self.daily_date_text=d['date_text']; self.daily_hours_text=d['hours_text']; self.daily_peak_text=d['peak_text']
-        h = gateway_service.load_heatmaps(max(limit,1)*20); self.heatmap_recent_rows=h['recent_rows']; self.heatmap_weekday_rows=h['weekday_rows']; self.heatmap_days_text=h['day_count_text']; self.heatmap_peak_text=h['peak_hour_text']; self.heatmap_change_text=h['change_peak_text']; self.heatmap_weekday_text=h['weekday_focus_text']
+        threshold = int(self.heatmap_switch_threshold or '300') if (self.heatmap_switch_threshold or '300').isdigit() else 300
+        h = gateway_service.load_heatmaps(max(limit,1)*20, switch_threshold_w=threshold); self.heatmap_recent_rows=h['recent_rows']; self.heatmap_weekday_rows=h['weekday_rows']; self.heatmap_days_text=h['day_count_text']; self.heatmap_peak_text=h['peak_hour_text']; self.heatmap_change_text=h['change_peak_text']; self.heatmap_weekday_text=h['weekday_focus_text']
         self.signature_rows = gateway_service.signature_rows(12)
     def refresh_diagnostics(self):
         diag = gateway_service.diagnostics_summary(80, self.event_filter)

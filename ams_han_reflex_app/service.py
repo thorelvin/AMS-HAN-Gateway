@@ -28,7 +28,7 @@ from .support.settings_store import SettingsStore
 DEFAULT_SETTINGS: dict[str, Any] = {
     'last_port':'', 'baudrate':115200, 'auto_connect':True, 'show_advanced':False, 'db_path':'',
     'price_area':'NO3', 'grid_day_rate':GRID_DAY_RATE_NOK_PER_KWH, 'grid_night_rate':GRID_NIGHT_RATE_NOK_PER_KWH,
-    'event_filter':'all', 'replay_path':'', 'replay_lines_per_tick':4,
+    'event_filter':'all', 'replay_path':'', 'replay_lines_per_tick':4, 'heatmap_switch_threshold':300,
 }
 
 PROBE_TIMEOUT_S = 2.6
@@ -399,7 +399,7 @@ class GatewayService:
             if len(rows)>=limit: break
         return rows
     def daily_graph_data(self, limit: int=6000): return daily_graph_data(self._all_records_desc()[:limit])
-    def load_heatmaps(self, limit: int=6000): return build_load_heatmaps(self._all_records_desc()[:limit])
+    def load_heatmaps(self, limit: int=6000, switch_threshold_w: float = 300.0): return build_load_heatmaps(self._all_records_desc()[:limit], switch_threshold_w=switch_threshold_w)
     def diagnostics_summary(self, limit:int=80, event_filter:str='all'):
         phase=self.phase_analysis(); events=self.event_tracker_rows(limit,event_filter); issues=diagnose_issues(events, phase, self.connection_status, self.wifi_status.state); health=health_rows(self.connection_status, self.wifi_status.state, self.mqtt_status.state, self.last_frame_seq, self.last_frame_len, self.latest_snapshot, len(self.event_log)); return {'issues':issues,'health':health,'phase':phase,'what_changed':what_changed(self.latest_snapshot, events)}
     def signature_rows(self, limit:int=12): return build_signature_rows(list(self.event_log), limit)

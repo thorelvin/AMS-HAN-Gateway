@@ -14,6 +14,7 @@ class HeatmapCell:
     hour: str
     primary: str
     secondary: str
+    tertiary: str
     bg: str
     border: str
     text_color: str
@@ -216,6 +217,10 @@ def _empty_heat_bucket() -> dict[str, float]:
         'step_sum_kw': 0.0,
         'step_count': 0.0,
         'peak_abs_kw': 0.0,
+        'switch_l1': 0.0,
+        'switch_l2': 0.0,
+        'switch_l3': 0.0,
+        'switch_3p': 0.0,
     }
 
 
@@ -243,6 +248,11 @@ def _bucket_stats(bucket: dict[str, float]) -> dict[str, float]:
             'avg_export_kw': 0.0,
             'avg_step_kw': 0.0,
             'peak_abs_kw': 0.0,
+            'switch_l1': 0.0,
+            'switch_l2': 0.0,
+            'switch_l3': 0.0,
+            'switch_3p': 0.0,
+            'switch_total': 0.0,
         }
     return {
         'avg_abs_kw': bucket['abs_energy_kwh'] / duration_h,
@@ -251,17 +261,43 @@ def _bucket_stats(bucket: dict[str, float]) -> dict[str, float]:
         'avg_export_kw': bucket['export_energy_kwh'] / duration_h,
         'avg_step_kw': (bucket['step_sum_kw'] / step_count) if step_count else 0.0,
         'peak_abs_kw': bucket['peak_abs_kw'],
+        'switch_l1': bucket['switch_l1'],
+        'switch_l2': bucket['switch_l2'],
+        'switch_l3': bucket['switch_l3'],
+        'switch_3p': bucket['switch_3p'],
+        'switch_total': bucket['switch_l1'] + bucket['switch_l2'] + bucket['switch_l3'] + bucket['switch_3p'],
     }
 
 
-def _format_cell_text(stats: dict[str, float], duration_h: float) -> tuple[str, str]:
+def _phase_from_current_deltas(d1: float, d2: float, d3: float) -> str:
+    mags = {'L1': abs(d1), 'L2': abs(d2), 'L3': abs(d3)}
+    ordered = sorted(mags.items(), key=lambda item: item[1], reverse=True)
+    if ordered[0][1] < 0.2:
+        return '-'
+    if ordered[2][1] > 0.4 and ordered[2][1] / max(ordered[0][1], 0.001) > 0.5:
+        return '3-phase'
+    return ordered[0][0]
+
+
+def _record_switch(bucket: dict[str, float], phase_label: str) -> None:
+    if phase_label == 'L1':
+        bucket['switch_l1'] += 1.0
+    elif phase_label == 'L2':
+        bucket['switch_l2'] += 1.0
+    elif phase_label == 'L3':
+        bucket['switch_l3'] += 1.0
+    elif phase_label == '3-phase':
+        bucket['switch_3p'] += 1.0
+
+
+def _format_cell_text(stats: dict[str, float], duration_h: float) -> tuple[str, str, str]:
     if duration_h <= 0:
-        return '-', 'No data'
+        return '-', 'No data', ''
     signed = stats['avg_signed_kw']
-    change = stats['avg_step_kw']
     primary = f"{signed:+.1f} kW"
-    secondary = f"Use {stats['avg_abs_kw']:.1f} | d {change:.1f}"
-    return primary, secondary
+    secondary = f"L {int(stats['switch_l1'])}/{int(stats['switch_l2'])}/{int(stats['switch_l3'])}"
+    tertiary = f"3P {int(stats['switch_3p'])}"
+    return primary, secondary, tertiary
 
 
 def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple[str, str, str, str]:
@@ -284,7 +320,7 @@ def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple
     return bg, border, text_color, secondary_color
 
 
-def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[str, Any]:
+def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7, switch_threshold_w: float = 300.0) -> dict[str, Any]:
     hourly_buckets: dict[tuple[str, int], dict[str, float]] = defaultdict(_empty_heat_bucket)
     if not records_desc:
         return {
@@ -338,6 +374,13 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[s
             hourly_buckets[end_key]['peak_abs_kw'],
             _sample_power(end_record.snapshot)['abs_kw'],
         )
+        if step_kw * 1000.0 >= switch_threshold_w:
+            phase_label = _phase_from_current_deltas(
+                end_record.snapshot.l1_a - start_record.snapshot.l1_a,
+                end_record.snapshot.l2_a - start_record.snapshot.l2_a,
+                end_record.snapshot.l3_a - start_record.snapshot.l3_a,
+            )
+            _record_switch(hourly_buckets[end_key], phase_label)
 
     if not hourly_buckets:
         return {
@@ -362,7 +405,7 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[s
         for hour in range(24):
             bucket = bucket_lookup(label_key, hour)
             stats = _bucket_stats(bucket)
-            primary, secondary = _format_cell_text(stats, bucket['duration_h'])
+            primary, secondary, tertiary = _format_cell_text(stats, bucket['duration_h'])
             load_norm = stats['avg_abs_kw'] / max_abs_kw if max_abs_kw else 0.0
             change_norm = stats['avg_step_kw'] / max_step_kw if max_step_kw else 0.0
             bg, border, text_color, secondary_color = _cell_style(load_norm, change_norm, stats['avg_signed_kw'])
@@ -370,6 +413,7 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[s
                 hour=f'{hour:02d}',
                 primary=primary,
                 secondary=secondary,
+                tertiary=tertiary,
                 bg=bg,
                 border=border,
                 text_color=text_color,
@@ -377,16 +421,17 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[s
                 duration_text=f"{bucket['duration_h']:.2f} h",
                 tooltip=(
                     f"{label_text} {hour:02d}:00 | Net {stats['avg_signed_kw']:+.2f} kW | "
-                    f"Use {stats['avg_abs_kw']:.2f} kW | Change {stats['avg_step_kw']:.2f} kW | "
-                    f"Peak {stats['peak_abs_kw']:.2f} kW | Coverage {bucket['duration_h']:.2f} h"
+                    f"Use {stats['avg_abs_kw']:.2f} kW | L1/L2/L3 switches {int(stats['switch_l1'])}/{int(stats['switch_l2'])}/{int(stats['switch_l3'])} | "
+                    f"3P {int(stats['switch_3p'])} | Threshold {switch_threshold_w:.0f} W | "
+                    f"Change {stats['avg_step_kw']:.2f} kW | Peak {stats['peak_abs_kw']:.2f} kW | Coverage {bucket['duration_h']:.2f} h"
                 ),
             ))
             row_peak = max(row_peak, stats['avg_abs_kw'])
-            row_change = max(row_change, stats['avg_step_kw'])
+            row_change += stats['switch_total']
         return HeatmapRow(
             label=label_text,
             peak_text=f'{row_peak:.1f} kW peak use',
-            change_text=f'{row_change:.1f} kW avg step max',
+            change_text=f'{int(row_change)} switches >= {switch_threshold_w:.0f} W',
             cells=cells,
         )
 
@@ -400,7 +445,10 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[s
         day_dt = datetime.strptime(day_label, '%Y-%m-%d')
         key = (day_dt.weekday(), hour)
         merged = weekday_buckets[key]
-        for field in ('duration_h', 'abs_energy_kwh', 'signed_energy_kwh', 'import_energy_kwh', 'export_energy_kwh', 'step_sum_kw', 'step_count'):
+        for field in (
+            'duration_h', 'abs_energy_kwh', 'signed_energy_kwh', 'import_energy_kwh', 'export_energy_kwh',
+            'step_sum_kw', 'step_count', 'switch_l1', 'switch_l2', 'switch_l3', 'switch_3p'
+        ):
             merged[field] += bucket[field]
         merged['peak_abs_kw'] = max(merged['peak_abs_kw'], bucket['peak_abs_kw'])
 
@@ -415,7 +463,7 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[s
         default=None,
     )
     change_day_hour = max(
-        ((day, hour, _bucket_stats(bucket)['avg_step_kw']) for (day, hour), bucket in hourly_buckets.items() if bucket['duration_h'] > 0),
+        ((day, hour, _bucket_stats(bucket)['switch_total']) for (day, hour), bucket in hourly_buckets.items() if bucket['duration_h'] > 0),
         key=lambda item: item[2],
         default=None,
     )
@@ -444,8 +492,8 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7) -> dict[s
             if peak_day_hour else 'No hourly load peak yet'
         ),
         'change_peak_text': (
-            f"{change_day_hour[0]} {change_day_hour[1]:02d}:00 at {change_day_hour[2]:.1f} kW avg step"
-            if change_day_hour else 'No load-change spikes yet'
+            f"{change_day_hour[0]} {change_day_hour[1]:02d}:00 with {int(change_day_hour[2])} switches >= {switch_threshold_w:.0f} W"
+            if change_day_hour else f'No switches >= {switch_threshold_w:.0f} W yet'
         ),
         'weekday_focus_text': f'{weekday_focus[0]} is busiest on average ({weekday_focus[1]:.1f} kW)',
     }
