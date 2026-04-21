@@ -1,5 +1,6 @@
 import sys
 import tempfile
+from collections import deque
 from pathlib import Path
 from unittest.mock import patch
 import unittest
@@ -29,6 +30,45 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(message, "Connected to COM4")
             probe_mock.assert_not_called()
             connect_mock.assert_not_called()
+
+    def test_set_mains_network_type_reclassifies_existing_power_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
+            svc.event_log = deque(
+                [
+                    {
+                        "category": "power",
+                        "type": "load_session_end",
+                        "time": "2026-04-21 09:20:00",
+                        "phase": "L1",
+                        "phase_delta": "L1 +3.000 | L2 +3.100 | L3 +0.050",
+                        "dW": "-50.0",
+                        "note": "Session started 2026-04-21 09:00:00 (Likely single-phase appliance step)",
+                        "summary": "Load session ended on L1",
+                    },
+                    {
+                        "category": "power",
+                        "type": "load_session_start",
+                        "time": "2026-04-21 09:00:00",
+                        "phase": "L1",
+                        "phase_delta": "L1 +3.000 | L2 +3.100 | L3 +0.050",
+                        "dW": "-2300.0",
+                        "note": "Likely single-phase appliance step",
+                        "summary": "Load session start -2300 W on L1",
+                    },
+                ],
+                maxlen=1200,
+            )
+
+            svc.set_mains_network_type("IT")
+
+            self.assertEqual(svc.mains_network_type, "IT")
+            self.assertEqual(svc.event_log[0]["phase"], "L1-L2")
+            self.assertEqual(svc.event_log[1]["phase"], "L1-L2")
+            self.assertIn("Likely phase-to-phase appliance step", svc.event_log[1]["note"])
+            self.assertIn("(Likely phase-to-phase appliance step)", svc.event_log[0]["note"])
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
+from .mains import DEFAULT_MAINS_NETWORK_TYPE, classify_phase_delta, normalize_mains_network_type
 from .signatures import likely_device_hint
 
 @dataclass
@@ -30,21 +31,12 @@ class EventRecord:
         return {k:str(v) for k,v in d.items()}
 
 class EventEngineV2:
-    def __init__(self) -> None:
+    def __init__(self, mains_network_type: str = DEFAULT_MAINS_NETWORK_TYPE) -> None:
         self.active_quality: dict[str, dict[str, Any]] = {}
         self.active_sessions: dict[str, dict[str, Any]] = {}
         self.last_emit_by_key: dict[str, tuple[str, float]] = {}
         self.last_baseline_signed: float | None = None
-
-    @staticmethod
-    def _phase_from_values(d1: float, d2: float, d3: float) -> str:
-        mags = {'L1':abs(d1),'L2':abs(d2),'L3':abs(d3)}
-        ordered = sorted(mags.items(), key=lambda kv: kv[1], reverse=True)
-        if ordered[0][1] < 0.2:
-            return '-'
-        if ordered[2][1] > 0.4 and ordered[2][1] / max(ordered[0][1],0.001) > 0.5:
-            return '3-phase'
-        return ordered[0][0]
+        self.mains_network_type = normalize_mains_network_type(mains_network_type)
 
     def _should_emit(self, key: str, ts_dt: datetime, marker: float, cooldown_s: float = 10.0) -> bool:
         prev = self.last_emit_by_key.get(key)
@@ -73,7 +65,7 @@ class EventEngineV2:
         volt_text=f"{volts[0]:.1f}/{volts[1]:.1f}/{volts[2]:.1f} V"
         d1 = float(current['l1_a']-previous['l1_a']); d2=float(current['l2_a']-previous['l2_a']); d3=float(current['l3_a']-previous['l3_a'])
         phase_delta=f"L1 {d1:+.3f} | L2 {d2:+.3f} | L3 {d3:+.3f}"
-        phase=self._phase_from_values(d1,d2,d3)
+        phase=classify_phase_delta(d1, d2, d3, self.mains_network_type)
         conf=0.95 if phase!='-' else 0.5
 
         # Quality events for invalid voltages
@@ -114,16 +106,17 @@ class EventEngineV2:
         if abs(delta) >= 800.0:
             session_key = f'session:{phase}:{"export" if delta>0 else "import"}'
             if session_key not in self.active_sessions and self._should_emit(session_key, ts_dt, abs(delta), cooldown_s=20.0):
-                self.active_sessions[session_key]={'start':ts,'baseline':baseline_signed,'phase':phase,'direction':'export' if delta>0 else 'import'}
+                signature_note = likely_device_hint(delta, phase, sustained=True, mains_network_type=self.mains_network_type)
+                self.active_sessions[session_key]={'start':ts,'baseline':baseline_signed,'phase':phase,'direction':'export' if delta>0 else 'import','signature_note':signature_note}
                 events.append(self._make(time=ts, category='power', event_type='load_session_start', status='open', severity='critical' if abs(delta)>=5000 else 'high' if abs(delta)>=2500 else 'medium', confidence=conf,
                     summary=f'Load session start {delta:+.0f} W on {phase}', delta_signed=delta, phase=phase, voltages=volt_text, phase_delta=phase_delta,
-                    note=likely_device_hint(delta, phase, sustained=True)))
+                    note=signature_note))
         # session end when current returns close to baseline
         for key, info in list(self.active_sessions.items()):
             if abs(current_signed - float(info['baseline'])) < 350.0:
                 events.append(self._make(time=ts, category='power', event_type='load_session_end', status='resolved', severity='info', confidence=0.85,
                     summary=f"Load session ended on {info['phase']}", delta_signed=current_signed-float(info['baseline']), phase=str(info['phase']), voltages=volt_text, phase_delta=phase_delta,
-                    note=f"Session started {info['start']} ({likely_device_hint(current_signed-float(info['baseline']), str(info['phase']))})"))
+                    note=f"Session started {info['start']} ({info.get('signature_note', likely_device_hint(current_signed-float(info['baseline']), str(info['phase']), mains_network_type=self.mains_network_type))})"))
                 self.active_sessions.pop(key, None)
 
         # Fast sharp-edge events against previous sample
@@ -132,5 +125,5 @@ class EventEngineV2:
             direction='Export step' if sample_delta>0 else 'Import step'
             events.append(self._make(time=ts, category='power', event_type='power_step', status='open', severity='critical' if abs(sample_delta)>=6000 else 'high' if abs(sample_delta)>=3000 else 'medium', confidence=conf,
                 summary=f'{direction} {sample_delta:+.0f} W on {phase}', delta_signed=sample_delta, phase=phase, voltages=volt_text, phase_delta=phase_delta,
-                note=likely_device_hint(sample_delta, phase)))
+                note=likely_device_hint(sample_delta, phase, mains_network_type=self.mains_network_type)))
         return events

@@ -6,6 +6,14 @@ from datetime import datetime, timedelta
 from statistics import mean
 from typing import Any
 
+from .mains import (
+    DEFAULT_MAINS_NETWORK_TYPE,
+    classify_phase_delta,
+    normalize_mains_network_type,
+    switch_slot_labels,
+    switch_slot_text,
+)
+
 WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 
@@ -116,7 +124,12 @@ def analysis_summary(records_desc: list[Any]) -> dict[str, str]:
     }
 
 
-def phase_analysis(samples: list[dict[str, Any]], records_desc: list[Any]) -> dict[str, str]:
+def phase_analysis(
+    samples: list[dict[str, Any]],
+    records_desc: list[Any],
+    mains_network_type: str = DEFAULT_MAINS_NETWORK_TYPE,
+) -> dict[str, str]:
+    network_type = normalize_mains_network_type(mains_network_type)
     if not samples:
         # try derive from records
         if not records_desc:
@@ -142,11 +155,13 @@ def phase_analysis(samples: list[dict[str, Any]], records_desc: list[Any]) -> di
         spread=f"{worst:.1f} V worst phase spread"
     else:
         latest_volt='No voltage frame yet'; voltage_avg='No voltage averages yet'; voltage_min='No voltage minimums yet'; spread='0.0 V worst phase spread'
+    dominant_text = 'Dominant conductor recently' if network_type == 'IT' else 'Dominant phase recently'
+    imbalance_text = 'recent max conductor imbalance' if network_type == 'IT' else 'recent max imbalance'
     return {
         'phase_latest_text': f'L1 {l1a:.3f} A | L2 {l2a:.3f} A | L3 {l3a:.3f} A',
         'phase_avg_text': f'Avg L1 {avg_l1:.3f} A | Avg L2 {avg_l2:.3f} A | Avg L3 {avg_l3:.3f} A',
-        'phase_dominant_text': f'Dominant phase recently: {dominant}',
-        'phase_imbalance_text': f'{imbalance:.3f} A recent max imbalance',
+        'phase_dominant_text': f'{dominant_text}: {dominant}',
+        'phase_imbalance_text': f'{imbalance:.3f} A {imbalance_text}',
         'voltage_latest_text': latest_volt,
         'voltage_avg_text': voltage_avg,
         'voltage_min_text': voltage_min,
@@ -269,33 +284,29 @@ def _bucket_stats(bucket: dict[str, float]) -> dict[str, float]:
     }
 
 
-def _phase_from_current_deltas(d1: float, d2: float, d3: float) -> str:
-    mags = {'L1': abs(d1), 'L2': abs(d2), 'L3': abs(d3)}
-    ordered = sorted(mags.items(), key=lambda item: item[1], reverse=True)
-    if ordered[0][1] < 0.2:
-        return '-'
-    if ordered[2][1] > 0.4 and ordered[2][1] / max(ordered[0][1], 0.001) > 0.5:
-        return '3-phase'
-    return ordered[0][0]
-
-
-def _record_switch(bucket: dict[str, float], phase_label: str) -> None:
-    if phase_label == 'L1':
+def _record_switch(bucket: dict[str, float], phase_label: str, mains_network_type: str) -> None:
+    slot_labels = switch_slot_labels(mains_network_type)
+    if phase_label == slot_labels[0]:
         bucket['switch_l1'] += 1.0
-    elif phase_label == 'L2':
+    elif phase_label == slot_labels[1]:
         bucket['switch_l2'] += 1.0
-    elif phase_label == 'L3':
+    elif phase_label == slot_labels[2]:
         bucket['switch_l3'] += 1.0
     elif phase_label == '3-phase':
         bucket['switch_3p'] += 1.0
 
 
-def _format_cell_text(stats: dict[str, float], duration_h: float) -> tuple[str, str, str]:
+def _format_cell_text(
+    stats: dict[str, float],
+    duration_h: float,
+    mains_network_type: str,
+) -> tuple[str, str, str]:
     if duration_h <= 0:
         return '-', 'No data', ''
     signed = stats['avg_signed_kw']
     primary = f"{signed:+.1f} kW"
-    secondary = f"L {int(stats['switch_l1'])}/{int(stats['switch_l2'])}/{int(stats['switch_l3'])}"
+    secondary_prefix = 'IT' if normalize_mains_network_type(mains_network_type) == 'IT' else 'L'
+    secondary = f"{secondary_prefix} {int(stats['switch_l1'])}/{int(stats['switch_l2'])}/{int(stats['switch_l3'])}"
     tertiary = f"3P {int(stats['switch_3p'])}"
     return primary, secondary, tertiary
 
@@ -344,7 +355,14 @@ def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple
     return bg, border, text_color, secondary_color
 
 
-def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7, switch_threshold_w: float = 300.0) -> dict[str, Any]:
+def build_load_heatmaps(
+    records_desc: list[Any],
+    recent_days: int = 7,
+    switch_threshold_w: float = 300.0,
+    mains_network_type: str = DEFAULT_MAINS_NETWORK_TYPE,
+) -> dict[str, Any]:
+    network_type = normalize_mains_network_type(mains_network_type)
+    slot_labels_text = switch_slot_text(network_type)
     hourly_buckets: dict[tuple[str, int], dict[str, float]] = defaultdict(_empty_heat_bucket)
     if not records_desc:
         return {
@@ -399,12 +417,13 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7, switch_th
             _sample_power(end_record.snapshot)['abs_kw'],
         )
         if step_kw * 1000.0 >= switch_threshold_w:
-            phase_label = _phase_from_current_deltas(
+            phase_label = classify_phase_delta(
                 end_record.snapshot.l1_a - start_record.snapshot.l1_a,
                 end_record.snapshot.l2_a - start_record.snapshot.l2_a,
                 end_record.snapshot.l3_a - start_record.snapshot.l3_a,
+                network_type,
             )
-            _record_switch(hourly_buckets[end_key], phase_label)
+            _record_switch(hourly_buckets[end_key], phase_label, network_type)
 
     if not hourly_buckets:
         return {
@@ -429,7 +448,7 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7, switch_th
         for hour in range(24):
             bucket = bucket_lookup(label_key, hour)
             stats = _bucket_stats(bucket)
-            primary, secondary, tertiary = _format_cell_text(stats, bucket['duration_h'])
+            primary, secondary, tertiary = _format_cell_text(stats, bucket['duration_h'], network_type)
             load_norm = stats['avg_abs_kw'] / max_abs_kw if max_abs_kw else 0.0
             change_norm = stats['switch_total'] / max_switch_total if max_switch_total else 0.0
             bg, border, text_color, secondary_color = _cell_style(load_norm, change_norm, stats['avg_signed_kw'])
@@ -445,7 +464,7 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7, switch_th
                 duration_text=f"{bucket['duration_h']:.2f} h",
                 tooltip=(
                     f"{label_text} {hour:02d}:00 | Net {stats['avg_signed_kw']:+.2f} kW | "
-                    f"Use {stats['avg_abs_kw']:.2f} kW | L1/L2/L3 switches {int(stats['switch_l1'])}/{int(stats['switch_l2'])}/{int(stats['switch_l3'])} | "
+                    f"Use {stats['avg_abs_kw']:.2f} kW | {slot_labels_text} switches {int(stats['switch_l1'])}/{int(stats['switch_l2'])}/{int(stats['switch_l3'])} | "
                     f"3P {int(stats['switch_3p'])} | Threshold {switch_threshold_w:.0f} W | "
                     f"Change {stats['avg_step_kw']:.2f} kW | Peak {stats['peak_abs_kw']:.2f} kW | Coverage {bucket['duration_h']:.2f} h"
                 ),

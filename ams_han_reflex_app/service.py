@@ -19,8 +19,9 @@ from .domain.analysis import (
 )
 from .domain.event_engine import EventEngineV2
 from .domain.frame_parser import parse_kfm001_frame
+from .domain.mains import DEFAULT_MAINS_NETWORK_TYPE, classify_phase_delta, normalize_mains_network_type, parse_phase_delta_text
 from .domain.pricing import GRID_DAY_RATE_NOK_PER_KWH, GRID_NIGHT_RATE_NOK_PER_KWH, PRICE_AREAS, PriceProvider, estimate_capacity
-from .domain.signatures import build_signature_rows
+from .domain.signatures import build_signature_rows, likely_device_hint
 from .support.event_log_store import EventLogStore
 from .support.replay_player import ReplayPlayer
 from .support.settings_store import SettingsStore
@@ -29,6 +30,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'last_port':'', 'baudrate':115200, 'auto_connect':True, 'show_advanced':False, 'db_path':'',
     'price_area':'NO3', 'grid_day_rate':GRID_DAY_RATE_NOK_PER_KWH, 'grid_night_rate':GRID_NIGHT_RATE_NOK_PER_KWH,
     'event_filter':'all', 'replay_path':'', 'replay_lines_per_tick':4, 'heatmap_switch_threshold':300,
+    'mains_network_type': DEFAULT_MAINS_NETWORK_TYPE,
 }
 
 PROBE_TIMEOUT_S = 2.6
@@ -43,6 +45,7 @@ class GatewayService:
         self.db_path = Path(self.settings.get('db_path') or db_path)
         self.store = SnapshotStore(self.db_path)
         self.serial = SerialManager(on_line=self._on_line, on_state=self._on_state)
+        self.mains_network_type = normalize_mains_network_type(self.settings.get('mains_network_type', DEFAULT_MAINS_NETWORK_TYPE))
         self.connection_status='Searching for gateway'
         self.selected_port=str(self.settings.get('last_port',''))
         self.device_info: DeviceInfo | None = None
@@ -55,7 +58,7 @@ class GatewayService:
         self.recent_phase_samples: deque[dict[str, Any]] = deque(maxlen=1200)
         self.logs: deque[str] = deque(maxlen=1800)
         self.event_log: deque[dict[str, str]] = deque(self.event_log_store.load(), maxlen=1200)
-        self.event_engine = EventEngineV2()
+        self.event_engine = EventEngineV2(mains_network_type=self.mains_network_type)
         self.price_provider = PriceProvider()
         self.replay_player = ReplayPlayer()
         self.replay_records: deque[HistoryRecord] = deque(maxlen=12000)
@@ -96,6 +99,71 @@ class GatewayService:
     def _save_event_log(self, force: bool=False):
         if force: self.event_log_store.flush(list(self.event_log))
         else: self.event_log_store.flush_if_needed(list(self.event_log))
+
+    @staticmethod
+    def _parse_event_delta_w(event: dict[str, Any]) -> float | None:
+        raw = event.get('dW', event.get('delta_signed'))
+        if raw in (None, '', '-'):
+            return None
+        try:
+            return float(str(raw).replace('W', '').strip())
+        except ValueError:
+            return None
+
+    def _reclassify_event_log_for_mains(self) -> None:
+        session_start_info: dict[str, tuple[str, str]] = {}
+        for event in self.event_log:
+            if str(event.get('category', '') or '') != 'power':
+                continue
+            if str(event.get('type', event.get('event_type', '')) or '') != 'load_session_start':
+                continue
+            parsed = parse_phase_delta_text(event.get('phase_delta'))
+            if parsed is None:
+                continue
+            phase = classify_phase_delta(parsed[0], parsed[1], parsed[2], self.mains_network_type)
+            delta_w = self._parse_event_delta_w(event) or 0.0
+            note = likely_device_hint(delta_w, phase, sustained=True, mains_network_type=self.mains_network_type)
+            event['phase'] = phase
+            event['summary'] = f'Load session start {delta_w:+.0f} W on {phase}'
+            event['note'] = note
+            session_start_info[str(event.get('time', '-') or '-')] = (phase, note)
+
+        for event in self.event_log:
+            category = str(event.get('category', '') or '')
+            parsed = parse_phase_delta_text(event.get('phase_delta'))
+            if parsed is None or category not in ('power', 'phase'):
+                continue
+            phase = classify_phase_delta(parsed[0], parsed[1], parsed[2], self.mains_network_type)
+            event['phase'] = phase
+            if category != 'power':
+                continue
+            event_type = str(event.get('type', event.get('event_type', '')) or '')
+            delta_w = self._parse_event_delta_w(event) or 0.0
+            if event_type == 'load_session_start':
+                continue
+            elif event_type == 'load_session_end':
+                start_text = str(event.get('note', '') or '')
+                start_text = start_text[16:35] if start_text.startswith('Session started ') and len(start_text) >= 35 else '-'
+                event['summary'] = f'Load session ended on {phase}'
+                signature_note = session_start_info.get(start_text, (phase, likely_device_hint(delta_w, phase, mains_network_type=self.mains_network_type)))[1]
+                event['note'] = f'Session started {start_text} ({signature_note})'
+            elif event_type == 'power_step':
+                direction = 'Export step' if delta_w > 0 else 'Import step'
+                event['summary'] = f'{direction} {delta_w:+.0f} W on {phase}'
+                event['note'] = likely_device_hint(delta_w, phase, mains_network_type=self.mains_network_type)
+
+    def set_mains_network_type(self, mains_network_type: str) -> None:
+        normalized = normalize_mains_network_type(mains_network_type)
+        if normalized == self.mains_network_type:
+            return
+        self.mains_network_type = normalized
+        self.settings['mains_network_type'] = normalized
+        self._save_settings()
+        self.event_engine = EventEngineV2(mains_network_type=normalized)
+        self._reclassify_event_log_for_mains()
+        self._save_event_log(force=True)
+        self._invalidate_data_cache()
+        self._invalidate_event_cache()
 
     def list_ports(self) -> list[str]:
         self._last_ports_cache = SerialManager.list_ports()
@@ -301,7 +369,7 @@ class GatewayService:
     def _reset_live_buffers(self):
         self.device_info=None; self.wifi_status=WifiStatus(state='DISCONNECTED',ip=''); self.mqtt_status=MqttStatus(state='IDLE')
         self.latest_snapshot=None; self.last_frame_seq=0; self.last_frame_len=0; self.latest_kfm_detail=None
-        self.recent_phase_samples.clear(); self.event_engine=EventEngineV2(); self._invalidate_data_cache(); self._invalidate_event_cache()
+        self.recent_phase_samples.clear(); self.event_engine=EventEngineV2(mains_network_type=self.mains_network_type); self._invalidate_data_cache(); self._invalidate_event_cache()
 
     def _clear_replay_runtime(self):
         self.replay_records.clear(); self._replay_row_id=0; self._reset_live_buffers()
@@ -383,7 +451,7 @@ class GatewayService:
         s=self.store.get_summary(limit)
         return {'count':s.count,'avg_import_w':s.avg_import_w,'avg_net_w':s.avg_net_w,'max_import_w':s.max_import_w,'min_net_w':s.min_net_w,'max_net_w':s.max_net_w,'latest_received_at':s.latest_received_at}
     def analysis_summary(self, limit: int=1000): return analysis_summary(self._history_records_desc(limit))
-    def phase_analysis(self, limit: int=300): return phase_analysis(list(self.recent_phase_samples)[-limit:], self._history_records_desc(limit))
+    def phase_analysis(self, limit: int=300): return phase_analysis(list(self.recent_phase_samples)[-limit:], self._history_records_desc(limit), mains_network_type=self.mains_network_type)
     def top_hour_rows(self, limit: int=2000, top_n: int=8): return top_hour_rows(self._all_records_desc()[:limit], top_n)
     def event_tracker_rows(self, limit: int=80, event_filter: str='all'):
         rows=[]
@@ -399,7 +467,7 @@ class GatewayService:
             if len(rows)>=limit: break
         return rows
     def daily_graph_data(self, limit: int=6000): return daily_graph_data(self._all_records_desc()[:limit])
-    def load_heatmaps(self, limit: int=6000, switch_threshold_w: float = 300.0): return build_load_heatmaps(self._all_records_desc()[:limit], switch_threshold_w=switch_threshold_w)
+    def load_heatmaps(self, limit: int=6000, switch_threshold_w: float = 300.0): return build_load_heatmaps(self._all_records_desc()[:limit], switch_threshold_w=switch_threshold_w, mains_network_type=self.mains_network_type)
     def diagnostics_summary(self, limit:int=80, event_filter:str='all'):
         phase=self.phase_analysis(); events=self.event_tracker_rows(limit,event_filter); issues=diagnose_issues(events, phase, self.connection_status, self.wifi_status.state); health=health_rows(self.connection_status, self.wifi_status.state, self.mqtt_status.state, self.last_frame_seq, self.last_frame_len, self.latest_snapshot, len(self.event_log)); return {'issues':issues,'health':health,'phase':phase,'what_changed':what_changed(self.latest_snapshot, events)}
     def _signature_observed_dates(self, limit: int = 6000) -> list[str]:

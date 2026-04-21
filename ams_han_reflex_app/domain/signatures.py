@@ -6,17 +6,33 @@ import re
 from statistics import mean, median
 from typing import Any, Iterable
 
+from .mains import is_phase_pair_label, normalize_mains_network_type
+
 
 TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 SESSION_END_RE = re.compile(r'^Session started (?P<start>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \((?P<signature>.+)\)$')
 
 
-def likely_device_hint(delta_w: float, phase: str, sustained: bool = False) -> str:
+def likely_device_hint(
+    delta_w: float,
+    phase: str,
+    sustained: bool = False,
+    mains_network_type: str = 'TN',
+) -> str:
+    network_type = normalize_mains_network_type(mains_network_type)
     mag = abs(delta_w)
     if phase == '3-phase' and mag >= 6000:
         return 'Likely EV charger / large 3-phase load'
     if phase == '3-phase' and mag >= 2500:
         return 'Likely balanced 3-phase load'
+    if network_type == 'IT' and is_phase_pair_label(phase):
+        if mag >= 4500:
+            return 'Likely large phase-to-phase load'
+        if mag >= 2500:
+            return 'Likely heater / water heater / kitchen pair load'
+        if mag >= 1000:
+            return 'Likely phase-to-phase appliance step'
+        return 'Minor phase-to-phase load change'
     if mag >= 4500:
         return 'Likely oven, boiler or large heater'
     if mag >= 2500:

@@ -5,7 +5,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ams_han_reflex_app.backend.models import HistoryRecord, SnapshotEvent
-from ams_han_reflex_app.domain.analysis import build_load_heatmaps
+from ams_han_reflex_app.domain.analysis import build_load_heatmaps, phase_analysis
 
 
 def _record(
@@ -70,6 +70,29 @@ class HeatmapAnalysisTest(unittest.TestCase):
         self.assertEqual(heatmaps["recent_rows"][1].cells[9].secondary, "L 0/0/0")
         self.assertEqual(heatmaps["recent_rows"][1].cells[9].tertiary, "3P 1")
         self.assertIn("Threshold 300 W", heatmaps["recent_rows"][1].cells[9].tooltip)
+
+    def test_build_load_heatmaps_uses_phase_pairs_in_it_mode(self):
+        records_desc = [
+            _record(4, "2026-04-21 09:10:00", 0.0, 900.0, 4.0, 4.1, 1.0),
+            _record(3, "2026-04-21 09:00:00", 1800.0, 0.0, 1.0, 1.0, 1.0),
+            _record(2, "2026-04-21 08:50:00", 1500.0, 0.0, 1.0, 1.0, 1.0),
+            _record(1, "2026-04-21 08:40:00", 1400.0, 0.0, 1.0, 1.0, 1.0),
+        ]
+
+        heatmaps = build_load_heatmaps(records_desc, recent_days=7, switch_threshold_w=300.0, mains_network_type="IT")
+
+        self.assertEqual(heatmaps["recent_rows"][0].cells[9].secondary, "IT 1/0/0")
+        self.assertIn("L1-L2/L1-L3/L2-L3 switches 1/0/0", heatmaps["recent_rows"][0].cells[9].tooltip)
+
+    def test_phase_analysis_uses_it_wording(self):
+        phase = phase_analysis(
+            [{"l1_a": 4.2, "l2_a": 4.4, "l3_a": 1.1, "l1_v": 230.0, "l2_v": 231.0, "l3_v": 229.0}],
+            [],
+            mains_network_type="IT",
+        )
+
+        self.assertIn("Dominant conductor recently", phase["phase_dominant_text"])
+        self.assertIn("conductor imbalance", phase["phase_imbalance_text"])
 
 
 if __name__ == "__main__":

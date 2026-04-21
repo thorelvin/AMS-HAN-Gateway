@@ -10,6 +10,7 @@ UPLOAD_ID = "replay_upload"
 LIVE_SYNC_INTERVAL_MS = 2000
 HEATMAP_HOURS = [f"{hour:02d}" for hour in range(24)]
 HEATMAP_SWITCH_THRESHOLDS = [str(watts) for watts in range(100, 1600, 100)]
+MAINS_NETWORK_TYPES = ["TN", "IT"]
 
 
 def live_heartbeat() -> rx.Component:
@@ -167,6 +168,23 @@ def advanced_sidebar() -> rx.Component:
                 align="stretch",
             ),
             icon="plug",
+        ),
+        panel(
+            "Electrical Model",
+            rx.vstack(
+                rx.text("Mains network type", size="2", color=rx.color("gray", 10)),
+                rx.select(
+                    MAINS_NETWORK_TYPES,
+                    value=DashboardState.mains_network_type,
+                    on_change=DashboardState.set_mains_network_type,
+                    width="120px",
+                ),
+                rx.text(DashboardState.mains_network_note, size="2", color=rx.color("gray", 10)),
+                spacing="3",
+                width="100%",
+                align="stretch",
+            ),
+            icon="circuit_board",
         ),
         replay_panel(),
         simple_sidebar(),
@@ -397,7 +415,7 @@ def analysis_tab() -> rx.Component:
             "Load Signatures",
             rx.vstack(
                 rx.text(
-                    "Recurring signatures now include duty-cycle hints: average runtime, starts per day, common start hour, and weekday versus weekend frequency.",
+                    DashboardState.signature_assignment_text,
                     size="2",
                     color=rx.color("gray", 10),
                 ),
@@ -736,7 +754,7 @@ def heatmap_tab() -> rx.Component:
                 rx.vstack(
                     rx.text("Load switch threshold", size="2", color=rx.color("gray", 10)),
                     rx.text(
-                        "Counts signed power changes at or above the selected watt level and assigns them to L1, L2, L3, or 3-phase using phase-current deltas.",
+                        DashboardState.heatmap_assignment_text,
                         size="2",
                         color=rx.color("gray", 10),
                     ),
@@ -767,7 +785,7 @@ def heatmap_tab() -> rx.Component:
             "Recent Hourly Heatmap",
             heatmap_grid(
                 DashboardState.heatmap_recent_rows,
-                "Rows are the most recent days. Each cell shows average net load for the hour, then L1/L2/L3 switch counts and 3P switch count for the selected threshold.",
+                DashboardState.heatmap_recent_description,
             ),
             icon="grid_3x3",
         ),
