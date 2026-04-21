@@ -302,7 +302,10 @@ def _format_cell_text(stats: dict[str, float], duration_h: float) -> tuple[str, 
 
 def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple[str, str, str, str]:
     base_alpha = 0.12 + (0.68 * max(0.0, min(load_norm, 1.0)))
-    change_alpha = 0.08 + (0.62 * max(0.0, min(change_norm, 1.0)))
+    change_norm = max(0.0, min(change_norm, 1.0))
+    yellow_alpha = 0.10 + (0.40 * change_norm)
+    orange_alpha = 0.06 + (0.54 * change_norm)
+    red_alpha = 0.00 + (0.92 * (change_norm ** 1.35))
     if signed_kw > 0.12:
         base_rgb = (22, 163, 74)
     elif signed_kw < -0.12:
@@ -311,10 +314,12 @@ def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple
         base_rgb = (100, 116, 139)
     bg = (
         f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {base_alpha:.3f}) 0%, "
-        f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(base_alpha * 0.82, 0.08):.3f}) 72%, "
-        f"rgba(245, 158, 11, {change_alpha:.3f}) 100%)"
+        f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(base_alpha * 0.82, 0.08):.3f}) 60%, "
+        f"rgba(250, 204, 21, {yellow_alpha:.3f}) 78%, "
+        f"rgba(249, 115, 22, {orange_alpha:.3f}) 90%, "
+        f"rgba(239, 68, 68, {red_alpha:.3f}) 100%)"
     )
-    border = f"1px solid rgba(148, 163, 184, {0.18 + 0.35 * max(load_norm, change_norm):.3f})"
+    border = f"1px solid rgba({239 if change_norm > 0.55 else 148}, {68 if change_norm > 0.55 else 163}, {68 if change_norm > 0.55 else 184}, {0.18 + 0.42 * max(load_norm, change_norm):.3f})"
     text_color = '#f8fafc' if max(load_norm, change_norm) >= 0.58 else '#0f172a'
     secondary_color = '#e2e8f0' if text_color == '#f8fafc' else '#334155'
     return bg, border, text_color, secondary_color
@@ -396,7 +401,7 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7, switch_th
     recent_day_labels = list(reversed(unique_days[-recent_days:]))
     all_stats = [_bucket_stats(bucket) for bucket in hourly_buckets.values() if bucket['duration_h'] > 0]
     max_abs_kw = max((stats['avg_abs_kw'] for stats in all_stats), default=1.0) or 1.0
-    max_step_kw = max((stats['avg_step_kw'] for stats in all_stats), default=1.0) or 1.0
+    max_switch_total = max((stats['switch_total'] for stats in all_stats), default=1.0) or 1.0
 
     def make_cells(bucket_lookup, label_key: Any, label_text: str) -> HeatmapRow:
         cells: list[HeatmapCell] = []
@@ -407,7 +412,7 @@ def build_load_heatmaps(records_desc: list[Any], recent_days: int = 7, switch_th
             stats = _bucket_stats(bucket)
             primary, secondary, tertiary = _format_cell_text(stats, bucket['duration_h'])
             load_norm = stats['avg_abs_kw'] / max_abs_kw if max_abs_kw else 0.0
-            change_norm = stats['avg_step_kw'] / max_step_kw if max_step_kw else 0.0
+            change_norm = stats['switch_total'] / max_switch_total if max_switch_total else 0.0
             bg, border, text_color, secondary_color = _cell_style(load_norm, change_norm, stats['avg_signed_kw'])
             cells.append(HeatmapCell(
                 hour=f'{hour:02d}',
