@@ -14,7 +14,9 @@ It is intended as a practical engineering project for understanding household im
 - Device and link status for gateway identity, firmware, Wi-Fi, MQTT, and last frame activity
 - Diagnostics for missing voltage channels, voltage sag, phase spread, power steps, and load sessions
 - Phase and voltage analysis with imbalance, dominant-phase, and worst-spread summaries
-- Local snapshot history with daily buckets, top-hour tracking, and event-signature summaries
+- Load Signatures that group recurring power changes into likely household-device patterns with representative watt size
+- Heatmap analysis with time-weighted hourly buckets, weekday pattern view, and thresholded phase-switch counts
+- Local snapshot history with daily buckets, top-hour tracking, heatmaps, and event-signature summaries
 - Cost analysis with Norwegian price areas `NO1` to `NO5`, configurable grid rates, and capacity estimation
 - Replay and demo workflow for offline development, debugging, and scenario validation
 - Upload support for replay logs directly from the dashboard
@@ -114,6 +116,36 @@ Daily load graph and hourly buckets for the latest meter day:
 
 ![Daily tab](docs/images/dashboard-daily.png)
 
+### Heatmap tab
+
+The Heatmap tab turns stored history into a faster pattern-recognition view.
+
+It contains two related views:
+
+- **Recent Hourly Heatmap**
+  One row per recent day, one column per hour. This is meant for spotting where the house was steadily importing, steadily exporting, or repeatedly switching loads during specific hours.
+- **Weekly Pattern Heatmap**
+  The same hourly data collapsed into weekday rows. This makes repeated routines such as morning heating, daytime solar export, cooking peaks, EV charging windows, or night loads much easier to see.
+
+How to read each heatmap cell:
+
+- The large number such as `-2.1 kW` or `+3.3 kW` is the **average net load for that hour**.
+  Negative means import-dominant.
+  Positive means export-dominant.
+- `L x/y/z` is the count of **load switches assigned to `L1/L2/L3`** in that hour.
+- `3P n` is the count of **balanced 3-phase switch events** in that hour.
+- The **blue/green background** shows whether the hour was import-heavy or export-heavy overall.
+- The **amber corner** shows stronger switching activity during that hour.
+
+The `Load switch threshold` dropdown controls which signed power changes are counted as switches. The default is `300 W`, but the user can raise or lower the threshold from `100 W` to `1500 W` depending on whether the goal is to catch small appliance changes or only larger load steps.
+
+Why this matters:
+
+- It makes recurring hourly routines much easier to see than a raw history table.
+- It connects visible grid behavior to likely real switching activity on specific phases.
+- It helps separate steady background load from hours with active device cycling or rapid appliance changes.
+- It gives a practical bridge between phase analysis, Load Signatures, and cost/capacity planning.
+
 ### Cost tab
 
 Price area, grid settings, hourly cost rows, and capacity estimate:
@@ -179,6 +211,7 @@ The local Python application is responsible for:
 - presenting live and historical views in the browser
 - calculating hourly and daily energy-cost context
 - detecting power, voltage, phase, and data-quality events
+- building Load Signatures and hourly/weekly heatmap summaries from stored history
 - supporting replay-based development and troubleshooting
 
 ## Repository structure
@@ -207,7 +240,7 @@ The local Python application is responsible for:
 - `docs/images/` contains README screenshots and hardware reference images.
 - `esp32_wroom32d_ams_han_gateway.zip` contains the bundled ESP-IDF firmware project for the ESP32 gateway.
 - `fixtures/` contains bundled replay logs for testing gateway and dashboard behavior without live data.
-- `tests/` currently contains replay-player validation.
+- `tests/` contains lightweight regression coverage for replay loading, protocol parsing, heatmap analysis, service behavior, and signature grouping.
 - `PROJECT_OVERVIEW.md` provides a concise engineering summary of the repository.
 
 ## ESP32 firmware reference
@@ -347,6 +380,7 @@ The default experience is built around a few main areas:
 - `Analysis`: phase focus, imbalance, voltage behavior, top hourly buckets, and signature summaries
 - `Diagnostics`: issue summary, health panel, and filtered event tracker
 - `Daily`: daily hourly buckets and a graph-oriented overview of the latest meter day
+- `Heatmap`: recent-day and weekday-pattern heatmaps with thresholded `L1/L2/L3` and `3P` switch counts
 - `Cost`: spot-price context, grid-rate settings, hourly cost rows, and capacity estimate
 - `History`: stored snapshot table, averages, peaks, and local database summary
 
@@ -396,19 +430,27 @@ Current analysis and diagnostics include:
 - baseline-driven load-session start and end events
 - power-step detection against recent samples
 - recurring load-signature grouping with phase tagging, event counts, representative watt size, and confidence
+- time-weighted hourly heatmaps for recent-day and weekday-pattern analysis
+- thresholded phase-switch counts for `L1`, `L2`, `L3`, and `3-phase` activity inside each heatmap hour
 - likely device hints for large single-phase and three-phase changes
 - cost rows built from elapsed time between snapshots rather than raw sample counts
 - capacity estimate based on top hourly import averages on different days
 
 ## Testing
 
-Current automated coverage is lightweight and focused on replay support:
+Current automated coverage is still lightweight, but it now covers the main analysis and transport building blocks:
 
 ```bash
-python -m unittest tests/test_replay_player.py
+python -m unittest tests.test_analysis tests.test_service tests.test_protocol tests.test_signatures tests.test_replay_player
 ```
 
-This verifies that replay lines can be loaded and normalized into a usable playback session.
+This currently checks:
+
+- replay lines can be loaded into a usable playback session
+- protocol parsing accepts expected gateway line formats
+- serial auto-connect does not reconnect an already-open link
+- signature grouping produces representative watt values
+- heatmap analysis produces stable hourly and weekday outputs
 
 ## Related repositories
 
@@ -437,8 +479,10 @@ The repository currently provides:
 
 - a working Reflex dashboard for live and replayed gateway data
 - bundled scenario logs for diagnostics and replay development
-- integrated pricing, capacity, diagnostics, and history views
+- integrated pricing, capacity, diagnostics, history, and heatmap views
+- thresholded phase-switch heatmaps and Load Signatures for pattern-oriented analysis
 - theme switching, advanced tools, and improved hourly-cost rendering
+- lighter refresh behavior so heavier tabs do not churn in the background unnecessarily
 
 The project is active and structured for continued iteration around replay coverage, gateway integration, and deeper analysis features.
 
@@ -449,6 +493,7 @@ Possible next steps include:
 - broader replay fixture coverage for more edge cases
 - expanded gateway protocol and status visibility
 - richer export and solar-specific analysis
+- click-through from heatmap cells into matching History or Diagnostics windows
 - additional historical summaries and trend views
 - stronger automated tests around parsing, diagnostics, and pricing
 - easier packaging for non-development use
