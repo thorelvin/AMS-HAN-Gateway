@@ -1,0 +1,106 @@
+#include "telemetry.h"
+#include <string.h>
+
+typedef struct {
+    bool valid;
+    float import_w;
+    float export_w;
+    float net_power_w;
+    float l1_a;
+    float l2_a;
+    float l3_a;
+    float l1_v;
+    float l2_v;
+    float l3_v;
+} rolling_entry_t;
+
+static rolling_entry_t s_window[ROLLING_WINDOW_FRAMES];
+static uint8_t s_window_count = 0;
+static uint8_t s_window_head = 0;
+
+static float fmax3(float a, float b, float c) {
+    float m = a > b ? a : b;
+    return m > c ? m : c;
+}
+
+static float fmin3(float a, float b, float c) {
+    float m = a < b ? a : b;
+    return m < c ? m : c;
+}
+
+static float f_abs(float v) {
+    return v < 0.0f ? -v : v;
+}
+
+void telemetry_apply_derivations(han_snapshot_t *s) {
+    s->total_current_a = s->l1_a + s->l2_a + s->l3_a;
+    s->avg_voltage_v = (s->l1_v + s->l2_v + s->l3_v) / 3.0f;
+    s->phase_imbalance_a = fmax3(s->l1_a, s->l2_a, s->l3_a) - fmin3(s->l1_a, s->l2_a, s->l3_a);
+    s->net_power_w = s->import_w - s->export_w;
+    s->apparent_power_va = (s->l1_v * s->l1_a) + (s->l2_v * s->l2_a) + (s->l3_v * s->l3_a);
+    if (s->apparent_power_va > 1.0f) {
+        s->estimated_power_factor = f_abs(s->net_power_w) / s->apparent_power_va;
+        if (s->estimated_power_factor > 1.0f) s->estimated_power_factor = 1.0f;
+    } else {
+        s->estimated_power_factor = 0.0f;
+    }
+}
+
+void telemetry_apply_rolling_window(han_snapshot_t *s) {
+    if (!s || !s->values_valid) {
+        return;
+    }
+
+    rolling_entry_t e = {
+        .valid = true,
+        .import_w = s->import_w,
+        .export_w = s->export_w,
+        .net_power_w = s->net_power_w,
+        .l1_a = s->l1_a,
+        .l2_a = s->l2_a,
+        .l3_a = s->l3_a,
+        .l1_v = s->l1_v,
+        .l2_v = s->l2_v,
+        .l3_v = s->l3_v,
+    };
+
+    s_window[s_window_head] = e;
+    s_window_head = (uint8_t)((s_window_head + 1U) % ROLLING_WINDOW_FRAMES);
+    if (s_window_count < ROLLING_WINDOW_FRAMES) {
+        s_window_count++;
+    }
+
+    float sum_import = 0.0f, sum_export = 0.0f, sum_net = 0.0f;
+    float sum_l1a = 0.0f, sum_l2a = 0.0f, sum_l3a = 0.0f;
+    float sum_l1v = 0.0f, sum_l2v = 0.0f, sum_l3v = 0.0f;
+    uint8_t count = 0;
+
+    for (uint8_t i = 0; i < s_window_count; ++i) {
+        if (!s_window[i].valid) continue;
+        sum_import += s_window[i].import_w;
+        sum_export += s_window[i].export_w;
+        sum_net += s_window[i].net_power_w;
+        sum_l1a += s_window[i].l1_a;
+        sum_l2a += s_window[i].l2_a;
+        sum_l3a += s_window[i].l3_a;
+        sum_l1v += s_window[i].l1_v;
+        sum_l2v += s_window[i].l2_v;
+        sum_l3v += s_window[i].l3_v;
+        count++;
+    }
+
+    if (count == 0) {
+        return;
+    }
+
+    s->rolling_samples = count;
+    s->rolling_import_w = sum_import / count;
+    s->rolling_export_w = sum_export / count;
+    s->rolling_net_power_w = sum_net / count;
+    s->rolling_l1_a = sum_l1a / count;
+    s->rolling_l2_a = sum_l2a / count;
+    s->rolling_l3_a = sum_l3a / count;
+    s->rolling_l1_v = sum_l1v / count;
+    s->rolling_l2_v = sum_l2v / count;
+    s->rolling_l3_v = sum_l3v / count;
+}

@@ -37,14 +37,24 @@ PROBE_TIMEOUT_S = 2.6
 PROBE_RETRY_INTERVAL_S = 0.45
 
 class GatewayService:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(
+        self,
+        db_path: Path,
+        *,
+        settings_store: SettingsStore | None = None,
+        event_log_store: EventLogStore | None = None,
+        snapshot_store: SnapshotStore | None = None,
+        serial_manager: SerialManager | None = None,
+        price_provider: PriceProvider | None = None,
+        replay_player: ReplayPlayer | None = None,
+    ) -> None:
         self._lock = threading.RLock()
-        self.settings_store = SettingsStore(default_settings_path(), DEFAULT_SETTINGS)
+        self.settings_store = settings_store or SettingsStore(default_settings_path(), DEFAULT_SETTINGS)
         self.settings = self.settings_store.load()
-        self.event_log_store = EventLogStore(self.settings_store.directory/'event_log.json')
+        self.event_log_store = event_log_store or EventLogStore(self.settings_store.directory/'event_log.json')
         self.db_path = Path(self.settings.get('db_path') or db_path)
-        self.store = SnapshotStore(self.db_path)
-        self.serial = SerialManager(on_line=self._on_line, on_state=self._on_state)
+        self.store = snapshot_store or SnapshotStore(self.db_path)
+        self.serial = serial_manager or SerialManager(on_line=self._on_line, on_state=self._on_state)
         self.mains_network_type = normalize_mains_network_type(self.settings.get('mains_network_type', DEFAULT_MAINS_NETWORK_TYPE))
         self.connection_status='Searching for gateway'
         self.selected_port=str(self.settings.get('last_port',''))
@@ -59,8 +69,8 @@ class GatewayService:
         self.logs: deque[str] = deque(maxlen=1800)
         self.event_log: deque[dict[str, str]] = deque(self.event_log_store.load(), maxlen=1200)
         self.event_engine = EventEngineV2(mains_network_type=self.mains_network_type)
-        self.price_provider = PriceProvider()
-        self.replay_player = ReplayPlayer()
+        self.price_provider = price_provider or PriceProvider()
+        self.replay_player = replay_player or ReplayPlayer()
         self.replay_records: deque[HistoryRecord] = deque(maxlen=12000)
         self._replay_row_id = 0
         self._last_ports_cache: list[tuple[str,str]]=[]
@@ -109,6 +119,14 @@ class GatewayService:
             return float(str(raw).replace('W', '').strip())
         except ValueError:
             return None
+
+    @staticmethod
+    def _port_from_label(label: str) -> str:
+        text = str(label or '').strip()
+        for separator in (' - ', ' — ', ' â€” ', ' Ã¢â‚¬â€ '):
+            if separator in text:
+                return text.split(separator, 1)[0].strip()
+        return text
 
     def _reclassify_event_log_for_mains(self) -> None:
         session_start_info: dict[str, tuple[str, str]] = {}
@@ -167,15 +185,16 @@ class GatewayService:
 
     def list_ports(self) -> list[str]:
         self._last_ports_cache = SerialManager.list_ports()
-        return [f"{p} — {d}" if d else p for p,d in self._last_ports_cache]
+        return [f"{port} - {description}" if description else port for port, description in self._last_ports_cache]
 
     def preferred_port_label(self) -> str:
         target = self.selected_port or self.settings.get('last_port','')
         if not target:
             return ''
-        for p,d in self._last_ports_cache:
-            label=f"{p} — {d}" if d else p
-            if p==target or label==target:
+        target_port = self._port_from_label(target)
+        for port, description in self._last_ports_cache:
+            label = f"{port} - {description}" if description else port
+            if port == target_port or label == target:
                 return label
         return target
 
@@ -211,7 +230,7 @@ class GatewayService:
         if self.replay_player.summary().loaded:
             return 'Replay loaded. Stop replay before hardware auto-connect.'
         if self.serial.connected:
-            current_port = self.selected_port.split(' â€” ', 1)[0] if self.selected_port else self.settings.get('last_port', '')
+            current_port = self._port_from_label(self.selected_port) if self.selected_port else self.settings.get('last_port', '')
             self.connection_status = f'Connected to {current_port}' if current_port else 'Connected'
             return self.connection_status
         for port, _desc in self._ordered_candidates():
@@ -234,13 +253,12 @@ class GatewayService:
         self.auto_connect(baudrate)
 
     def connect(self, port_label: str, baudrate: int):
-        port = port_label.split(' — ',1)[0]
+        port = self._port_from_label(port_label)
         self.serial.connect(SerialConfig(port=port, baudrate=baudrate))
-        # Update immediately so the UI reflects auto-connect before the next callback/poll.
         self.connection_status = f'Connected to {port}'
         label = port_label
         for p, d in (self._last_ports_cache or SerialManager.list_ports()):
-            candidate = f"{p} — {d}" if d else p
+            candidate = f"{p} - {d}" if d else p
             if p == port or candidate == port_label:
                 label = candidate
                 break
@@ -504,7 +522,7 @@ class GatewayService:
 
     def cost_summary(self, limit:int=8000):
         area=str(self.settings.get('price_area','NO3')); day=float(self.settings.get('grid_day_rate',GRID_DAY_RATE_NOK_PER_KWH)); night=float(self.settings.get('grid_night_rate',GRID_NIGHT_RATE_NOK_PER_KWH))
-        now=datetime.now().astimezone(); price_data=self.price_provider.get_price_data(area, now); spot=float(price_data['current_price']); grid=self.price_provider.current_grid_rate(now.hour, day, night); total=spot+grid
+        now=datetime.now().astimezone(); price_quote=self.price_provider.quote_for_hour(area, now); spot=float(price_quote.nok_per_kwh); grid=self.price_provider.current_grid_rate(now.hour, day, night); total=spot+grid
         snap=self.latest_snapshot
         import_cost_now=((snap.import_w/1000.0)*total) if snap else 0.0
         export_value_now=((snap.export_w/1000.0)*spot) if snap else 0.0
@@ -512,15 +530,17 @@ class GatewayService:
         daily_import=daily_export=current_hour_import=0.0
         latest_day=max((i['start'].date() for i in intervals), default=None)
         current_hour = now.strftime('%Y-%m-%d %H')
-        hour_buckets=[]
         bucket_map={}
+        fallback_bucket_keys: set[str] = set()
         for i in intervals:
-            st=i['start'].astimezone(); spot_h=self.price_provider.price_for_hour(area, st.astimezone()); grid_h=self.price_provider.current_grid_rate(st.hour, day, night); total_h=spot_h+grid_h
+            st=i['start'].astimezone(); hour_quote=self.price_provider.quote_for_hour(area, st); spot_h=hour_quote.nok_per_kwh; grid_h=self.price_provider.current_grid_rate(st.hour, day, night); total_h=spot_h+grid_h
             imp_cost=i['import_kw']*i['hours']*total_h
             exp_val=i['export_kw']*i['hours']*spot_h
             if latest_day and st.date()==latest_day:
                 daily_import += imp_cost; daily_export += exp_val
                 key=st.strftime('%Y-%m-%d %H')
+                if hour_quote.fallback_used:
+                    fallback_bucket_keys.add(key)
                 b=bucket_map.setdefault(key, {'day':st.strftime('%Y-%m-%d'),'hour':st.strftime('%H'),'import_kwh':0.0,'export_kwh':0.0,'import_cost_nok':0.0,'export_value_nok':0.0,'spot_nok_kwh':spot_h,'grid_nok_kwh':grid_h,'total_nok_kwh':total_h,'duration_h':0.0})
                 b['import_kwh'] += i['import_kw']*i['hours']; b['export_kwh'] += i['export_kw']*i['hours']; b['import_cost_nok'] += imp_cost; b['export_value_nok'] += exp_val; b['duration_h'] += i['hours']
                 if key == current_hour:
@@ -530,14 +550,29 @@ class GatewayService:
             b=bucket_map[key]
             dur=max(b['duration_h'],1e-6)
             rows.append({'hour':b['hour'],'day':b['day'],'spot_nok_kwh':round(b['spot_nok_kwh'],3),'grid_nok_kwh':round(b['grid_nok_kwh'],3),'total_nok_kwh':round(b['total_nok_kwh'],3),'import_kw':round(b['import_kwh']/dur,3),'export_kw':round(b['export_kwh']/dur,3),'import_cost_nok':round(b['import_cost_nok'],3),'export_value_nok':round(b['export_value_nok'],3),'net_cost_nok':round(b['import_cost_nok']-b['export_value_nok'],3)})
-        # basis from top 3 hourly avg import on different days in current month
         hourly_for_capacity=[]
         month = latest_day.strftime('%Y-%m') if latest_day else ''
         for r in rows:
             if month and r['day'].startswith(month):
                 hourly_for_capacity.append({'day':r['day'],'hour':r['hour'],'avg_import_kw':r['import_kw']})
         cap = estimate_capacity(hourly_for_capacity)
-        return {'source_text':f"{price_data['source_name']} · {area} · {price_data['source_note']}",'spot_now_text':f'{spot:.3f} NOK/kWh spot','grid_now_text':f"{grid:.3f} NOK/kWh {self.price_provider.current_grid_rate_label(now.hour)}",'total_now_text':f'{total:.3f} NOK/kWh total','import_cost_now_text':f'{import_cost_now:.2f} NOK/h current import cost','export_value_now_text':f'{export_value_now:.2f} NOK/h current export value','daily_import_cost_text':f'{daily_import:.2f} NOK daily import cost','daily_export_value_text':f'{daily_export:.2f} NOK daily export value','daily_net_cost_text':f'{daily_import-daily_export:.2f} NOK daily net cost','current_hour_cost_text':f'{current_hour_import:.2f} NOK current hour import est.','capacity_step_text':cap['step_label'],'capacity_price_text':cap['step_price_text'],'capacity_basis_text':cap['basis_text'],'capacity_warning_text':cap['warning_text'],'rows':rows}
+        warnings: list[str] = []
+        if price_quote.warning_text:
+            warnings.append(price_quote.warning_text)
+        if fallback_bucket_keys:
+            warnings.append(f'Historical hourly cost rows used fallback spot pricing in {len(fallback_bucket_keys)} bucket(s).')
+        warning_text = ' '.join(text for text in warnings if text).strip()
+        spot_label = 'estimated spot' if price_quote.fallback_used else 'spot'
+        return {'source_text':f"{price_quote.source_name} - {area} - {price_quote.source_note}",'spot_now_text':f'{spot:.3f} NOK/kWh {spot_label}','grid_now_text':f"{grid:.3f} NOK/kWh {self.price_provider.current_grid_rate_label(now.hour)}",'total_now_text':f'{total:.3f} NOK/kWh total','import_cost_now_text':f'{import_cost_now:.2f} NOK/h current import cost','export_value_now_text':f'{export_value_now:.2f} NOK/h current export value','daily_import_cost_text':f'{daily_import:.2f} NOK daily import cost','daily_export_value_text':f'{daily_export:.2f} NOK daily export value','daily_net_cost_text':f'{daily_import-daily_export:.2f} NOK daily net cost','current_hour_cost_text':f'{current_hour_import:.2f} NOK current hour import est.','capacity_step_text':cap['step_label'],'capacity_price_text':cap['step_price_text'],'capacity_basis_text':cap['basis_text'],'capacity_warning_text':cap['warning_text'],'warning_text':warning_text,'rows':rows}
+
+    def clear_history(self):
+        with self._lock:
+            self.store.clear_history()
+            self.replay_records.clear()
+            self._replay_row_id = 0
+            self._append_log('INFO', 'Snapshot history cleared')
+            self._invalidate_data_cache()
+            self._invalidate_event_cache()
 
     def set_db_path(self, path: str):
         self.db_path=Path(path); self.store=SnapshotStore(self.db_path); self.settings['db_path']=str(self.db_path); self._save_settings(); self._invalidate_data_cache();

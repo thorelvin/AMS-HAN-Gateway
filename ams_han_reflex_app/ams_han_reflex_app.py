@@ -831,6 +831,15 @@ def cost_tab() -> rx.Component:
             spacing="4",
             width="100%",
         ),
+        rx.cond(
+            DashboardState.has_cost_warning,
+            panel(
+                "Price Source Warning",
+                hint_banner(DashboardState.cost_warning_text, "amber"),
+                icon="triangle_alert",
+            ),
+            rx.fragment(),
+        ),
         panel(
             "Cost settings",
             rx.vstack(

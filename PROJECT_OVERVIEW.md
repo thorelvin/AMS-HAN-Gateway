@@ -18,7 +18,7 @@ The dashboard is intentionally broader than a simple live view. It acts as the o
 
 ### 1. Gateway interface
 
-The repository now includes a bundled ESP-IDF firmware project in `esp32_wroom32d_ams_han_gateway.zip`, and that source should be treated as the reference gateway implementation.
+The repository now includes the ESP-IDF firmware project as extracted source in `firmware/esp_idf_ams_han_gateway_wroom32d/`, and that source should be treated as the reference gateway implementation.
 
 From that firmware, the expected gateway behavior is:
 
@@ -94,6 +94,7 @@ The domain layer is responsible for turning raw measurements into operator-facin
 - hourly and daily cost breakdown
 - `NO1` to `NO5` spot-price context
 - configurable day and night grid rates
+- explicit UI warnings when live spot pricing falls back to an estimate
 - capacity estimate based on top import hours on different days
 
 ### Replay and development support
@@ -141,6 +142,9 @@ Recent work has improved the repository with:
 - mains-aware `TN` and `IT` interpretation across events, signatures, and heatmaps
 - signature duty-cycle analytics for recurring loads
 - heatmap switch-threshold filtering and clearer switching-intensity visualization
+- explicit cost-source warnings instead of silent spot-price fallback
+- extracted firmware source tree for normal diffs, search, and review
+- replay-driven service workflow coverage in the automated tests
 - refreshed documentation aligned with both the bundled ESP-IDF gateway source and the standard used in the related PC-side repository
 
 ## Near-term improvement areas

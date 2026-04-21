@@ -8,10 +8,36 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ams_han_reflex_app import service as service_module
+from ams_han_reflex_app.domain.pricing import PriceQuote
+from ams_han_reflex_app.support.replay_player import normalize_replay_line
 
 
 class _ConnectedSerial:
     connected = True
+
+
+class _FixedPriceProvider:
+    def quote_for_hour(self, area, dt):
+        return PriceQuote(nok_per_kwh=0.875, source_name="Test price feed", source_note=f"{area} fixed test price")
+
+    @staticmethod
+    def current_grid_rate(hour, day_rate, night_rate):
+        return night_rate if (hour >= 22 or hour < 6) else day_rate
+
+    @staticmethod
+    def current_grid_rate_label(hour):
+        return 'Night (22-06)' if (hour >= 22 or hour < 6) else 'Day (06-22)'
+
+
+class _FallbackPriceProvider(_FixedPriceProvider):
+    def quote_for_hour(self, area, dt):
+        return PriceQuote(
+            nok_per_kwh=1.0,
+            source_name="Fallback spot estimate",
+            source_note=f"{area} live spot price unavailable",
+            fallback_used=True,
+            warning_text="Live spot price unavailable. Using explicit fallback estimate 1.000 NOK/kWh.",
+        )
 
 
 class GatewayServiceTest(unittest.TestCase):
@@ -69,6 +95,66 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(svc.event_log[1]["phase"], "L1-L2")
             self.assertIn("Likely phase-to-phase appliance step", svc.event_log[1]["note"])
             self.assertIn("(Likely phase-to-phase appliance step)", svc.event_log[0]["note"])
+
+    def test_clear_history_removes_persisted_rows(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(
+                Path(temp_dir) / "history.sqlite3",
+                price_provider=_FixedPriceProvider(),
+            )
+            fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "demo_session.log"
+            for raw_line in fixture_path.read_text(encoding="utf-8").splitlines():
+                line = normalize_replay_line(raw_line)
+                if line:
+                    svc._on_line(line)
+
+            self.assertGreater(svc.get_summary(100)["count"], 0)
+
+            svc.clear_history()
+
+            self.assertEqual(svc.get_summary(100)["count"], 0)
+
+    def test_cost_summary_surfaces_fallback_warning(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(
+                Path(temp_dir) / "history.sqlite3",
+                price_provider=_FallbackPriceProvider(),
+            )
+
+            summary = svc.cost_summary()
+
+            self.assertIn("estimated spot", summary["spot_now_text"])
+            self.assertIn("fallback estimate", summary["warning_text"].lower())
+
+    def test_fixture_workflow_builds_history_cost_and_heatmap_views(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(
+                Path(temp_dir) / "history.sqlite3",
+                price_provider=_FixedPriceProvider(),
+            )
+            fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "demo_session.log"
+            for raw_line in fixture_path.read_text(encoding="utf-8").splitlines():
+                line = normalize_replay_line(raw_line)
+                if line:
+                    svc._on_line(line)
+
+            summary = svc.get_summary(200)
+            cost = svc.cost_summary(12000)
+            heatmaps = svc.load_heatmaps(4000, switch_threshold_w=300.0)
+
+            self.assertEqual(svc.wifi_status.state, "CONNECTED")
+            self.assertEqual(svc.mqtt_status.state, "IDLE")
+            self.assertIsNotNone(svc.device_info)
+            self.assertGreater(summary["count"], 0)
+            self.assertEqual(cost["warning_text"], "")
+            self.assertTrue(isinstance(cost["rows"], list))
+            self.assertTrue(heatmaps["recent_rows"])
 
 
 if __name__ == "__main__":

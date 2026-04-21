@@ -17,7 +17,7 @@ It is intended as a practical engineering project for understanding household im
 - Load Signatures that group recurring power changes into likely household-device patterns with representative watt size and duty-cycle hints
 - Heatmap analysis with time-weighted hourly buckets, weekday pattern view, thresholded phase-switch counts, and switching-activity gradient
 - Local snapshot history with daily buckets, top-hour tracking, heatmaps, and event-signature summaries
-- Cost analysis with Norwegian price areas `NO1` to `NO5`, configurable grid rates, and capacity estimation
+- Cost analysis with Norwegian price areas `NO1` to `NO5`, configurable grid rates, capacity estimation, and explicit spot-price fallback warnings
 - Replay and demo workflow for offline development, debugging, and scenario validation
 - Upload support for replay logs directly from the dashboard
 - Gateway control actions for `GET_INFO`, `GET_STATUS`, Wi-Fi setup, MQTT setup, and discovery republish
@@ -85,6 +85,8 @@ Phase and voltage analysis together with load signatures and top-hour buckets:
 ### Electrical model selection
 
 The dashboard includes an `Electrical Model` selector in the advanced setup area so the analysis matches the installation type.
+
+![Electrical model selector](docs/images/dashboard-electrical-model.png)
 
 - **TN mode** treats most common 230 V appliance changes as `L1`, `L2`, or `L3` relative to neutral.
 - **IT mode** treats many 230 V appliance changes as conductor-pair activity such as `L1-L2`, `L1-L3`, or `L2-L3`.
@@ -211,7 +213,7 @@ The project is split into two practical parts:
 
 ### ESP32 gateway
 
-The repository includes an ESP-IDF firmware project inside `esp32_wroom32d_ams_han_gateway.zip`. Based on that source, the gateway is responsible for:
+The repository includes the ESP-IDF firmware project as normal source inside `firmware/esp_idf_ams_han_gateway_wroom32d/`. Based on that source, the gateway is responsible for:
 
 - using `UART0` as the PC command and response channel over USB
 - using `UART2` for the HAN adapter on `GPIO16` and `GPIO17`
@@ -250,9 +252,10 @@ The local Python application is responsible for:
 |   `-- support/
 |-- docs/
 |   `-- images/
+|-- firmware/
+|   `-- esp_idf_ams_han_gateway_wroom32d/
 |-- fixtures/
 |-- tests/
-|-- esp32_wroom32d_ams_han_gateway.zip
 |-- PROJECT_OVERVIEW.md
 |-- README.md
 |-- requirements.txt
@@ -261,17 +264,17 @@ The local Python application is responsible for:
 
 - `ams_han_reflex_app/` contains the Reflex UI, application service, parsing, diagnostics, pricing, and replay support.
 - `docs/images/` contains README screenshots and hardware reference images.
-- `esp32_wroom32d_ams_han_gateway.zip` contains the bundled ESP-IDF firmware project for the ESP32 gateway.
+- `firmware/esp_idf_ams_han_gateway_wroom32d/` contains the ESP-IDF firmware project for the ESP32 gateway in a reviewable source layout.
 - `fixtures/` contains bundled replay logs for testing gateway and dashboard behavior without live data.
-- `tests/` contains lightweight regression coverage for replay loading, protocol parsing, heatmap analysis, service behavior, and signature grouping.
+- `tests/` contains regression coverage for replay loading, protocol parsing, heatmap analysis, service behavior, signature grouping, and a replay-driven service workflow.
 - `PROJECT_OVERVIEW.md` provides a concise engineering summary of the repository.
 
 ## ESP32 firmware reference
 
-The bundled zip contains an ESP-IDF project with a practical module split:
+The extracted firmware tree has a practical ESP-IDF module split:
 
 ```text
-esp32_wroom32d_ams_han_gateway.zip
+firmware/
 `-- esp_idf_ams_han_gateway_wroom32d/
     |-- README.md
     |-- CMakeLists.txt
@@ -312,7 +315,7 @@ The embedded project is set up for an `ESP32-WROOM-32D` development board with U
 
 ### Building the firmware
 
-After extracting `esp32_wroom32d_ams_han_gateway.zip`, the bundled ESP-IDF README uses the following workflow:
+From `firmware/esp_idf_ams_han_gateway_wroom32d/`, the ESP-IDF README uses the following workflow:
 
 ```bash
 idf.py set-target esp32
@@ -411,8 +414,7 @@ The default experience is built around a few main areas:
 
 If you want to work on the embedded side as well as the dashboard:
 
-- extract `esp32_wroom32d_ams_han_gateway.zip`
-- open the ESP-IDF project inside `esp_idf_ams_han_gateway_wroom32d/`
+- open the ESP-IDF project inside `firmware/esp_idf_ams_han_gateway_wroom32d/`
 - build and flash the ESP32 firmware
 - connect the ESP32 over USB so the Reflex app can probe it as the gateway source
 
@@ -457,6 +459,7 @@ Current analysis and diagnostics include:
 - time-weighted hourly heatmaps for recent-day and weekday-pattern analysis
 - thresholded phase-switch counts for `L1`, `L2`, `L3`, and `3-phase` activity inside each heatmap hour, or `L1-L2`, `L1-L3`, `L2-L3`, and `3-phase` in `IT` mode
 - user-selectable `TN` and `IT` mains interpretation so event and switch attribution fits the installation type
+- explicit warnings in the UI when live spot pricing is unavailable and cost calculations fall back to an estimate
 - likely device hints for large single-phase and three-phase changes
 - cost rows built from elapsed time between snapshots rather than raw sample counts
 - capacity estimate based on top hourly import averages on different days
@@ -466,7 +469,7 @@ Current analysis and diagnostics include:
 Current automated coverage is still lightweight, but it now covers the main analysis and transport building blocks:
 
 ```bash
-python -m unittest tests.test_analysis tests.test_service tests.test_protocol tests.test_signatures tests.test_replay_player
+python -m unittest
 ```
 
 This currently checks:
@@ -476,6 +479,7 @@ This currently checks:
 - serial auto-connect does not reconnect an already-open link
 - signature grouping produces representative watt values
 - heatmap analysis produces stable hourly and weekday outputs
+- a replay-driven service workflow can build stored history, heatmaps, and cost summaries from realistic gateway lines
 
 ## Related repositories
 

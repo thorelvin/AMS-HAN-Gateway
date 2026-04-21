@@ -30,6 +30,7 @@ class DashboardState(rx.State):
     spot_now_text: str = '-'
     grid_now_text: str = '-'
     total_now_text: str = '-'
+    cost_warning_text: str = ''
     import_cost_now_text: str = '-'
     export_value_now_text: str = '-'
     daily_import_cost_text: str = '-'
@@ -270,7 +271,7 @@ class DashboardState(rx.State):
         diag = gateway_service.diagnostics_summary(80, self.event_filter)
         self.diagnostics_issues = diag['issues']; self.health_rows = diag['health']; self.event_rows = gateway_service.event_tracker_rows(120, self.event_filter)
     def refresh_cost(self):
-        c = gateway_service.cost_summary(12000); self.cost_source_text=c['source_text']; self.spot_now_text=c['spot_now_text']; self.grid_now_text=c['grid_now_text']; self.total_now_text=c['total_now_text']; self.import_cost_now_text=c['import_cost_now_text']; self.export_value_now_text=c['export_value_now_text']; self.daily_import_cost_text=c['daily_import_cost_text']; self.daily_export_value_text=c['daily_export_value_text']; self.daily_net_cost_text=c['daily_net_cost_text']; self.current_hour_cost_text=c['current_hour_cost_text']; self.capacity_step_text=c['capacity_step_text']; self.capacity_price_text=c['capacity_price_text']; self.capacity_basis_text=c['capacity_basis_text']; self.capacity_warning_text=c['capacity_warning_text']; self.cost_rows=c['rows']
+        c = gateway_service.cost_summary(12000); self.cost_source_text=c['source_text']; self.spot_now_text=c['spot_now_text']; self.grid_now_text=c['grid_now_text']; self.total_now_text=c['total_now_text']; self.cost_warning_text=c.get('warning_text', ''); self.import_cost_now_text=c['import_cost_now_text']; self.export_value_now_text=c['export_value_now_text']; self.daily_import_cost_text=c['daily_import_cost_text']; self.daily_export_value_text=c['daily_export_value_text']; self.daily_net_cost_text=c['daily_net_cost_text']; self.current_hour_cost_text=c['current_hour_cost_text']; self.capacity_step_text=c['capacity_step_text']; self.capacity_price_text=c['capacity_price_text']; self.capacity_basis_text=c['capacity_basis_text']; self.capacity_warning_text=c['capacity_warning_text']; self.cost_rows=c['rows']
     def refresh_tab_data(self):
         if self.current_tab == 'history':
             self.refresh_history()
@@ -286,7 +287,13 @@ class DashboardState(rx.State):
         try: night=float(self.grid_night_rate or '0')
         except ValueError: night=0.2642; self.grid_night_rate=str(night)
         gateway_service.save_cost_settings(price_area=self.price_area, grid_day_rate=day, grid_night_rate=night); self.refresh_cost()
-    def clear_history(self): gateway_service.clear_history(); self.sync_from_service(force_heavy=True)
+    def clear_history(self):
+        gateway_service.clear_history()
+        self.refresh_history()
+        self.refresh_analysis()
+        self.refresh_cost()
+        self.refresh_diagnostics()
+        self.sync_from_service()
     def apply_db_path(self): gateway_service.set_db_path(self.db_path); self.refresh_history(); self.refresh_analysis(); self.refresh_cost(); self.sync_from_service()
 
     # replay actions
@@ -307,7 +314,7 @@ class DashboardState(rx.State):
         self.sync_from_service(force_heavy=True)
 
     @rx.var(cache=False)
-    def wifi_summary(self) -> str: return f"{self.wifi_state} • {self.wifi_ip}" if self.wifi_ip else self.wifi_state
+    def wifi_summary(self) -> str: return f"{self.wifi_state} | {self.wifi_ip}" if self.wifi_ip else self.wifi_state
     @rx.var(cache=False)
     def db_summary(self) -> str: return f"{self.db_count} snapshots"
     @rx.var(cache=False)
@@ -316,6 +323,8 @@ class DashboardState(rx.State):
     @rx.var(cache=False)
     def has_snapshot(self) -> bool: return self.snapshot_meter != '-'
     @rx.var(cache=False)
+    def has_cost_warning(self) -> bool: return bool(self.cost_warning_text.strip())
+    @rx.var(cache=False)
     def show_cached_banner(self) -> bool: return self.stale_snapshot
     @rx.var(cache=False)
     def live_opacity(self) -> str: return '0.58' if self.stale_snapshot else '1.0'
@@ -323,7 +332,7 @@ class DashboardState(rx.State):
     def onboarding_message(self) -> str:
         replay = gateway_service.replay_summary()
         if replay.get('loaded'):
-            return f"Replay mode active: {replay.get('source_name')} · {replay.get('status_text')} · {replay.get('progress_text')}"
+            return f"Replay mode active: {replay.get('source_name')} | {replay.get('status_text')} | {replay.get('progress_text')}"
         if self.stale_snapshot:
             return 'Disconnected from gateway. Showing last cached snapshot while auto-reconnect runs in the background.'
         if self.connection_status.startswith('Connected to') and not self.has_snapshot:
