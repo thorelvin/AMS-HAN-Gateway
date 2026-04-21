@@ -120,6 +120,8 @@ Daily load graph and hourly buckets for the latest meter day:
 
 The Heatmap tab turns stored history into a faster pattern-recognition view.
 
+![Heatmap tab](docs/images/dashboard-heatmap.png)
+
 It contains two related views:
 
 - **Recent Hourly Heatmap**
@@ -138,6 +140,8 @@ How to read each heatmap cell:
 - The **amber corner** shows stronger switching activity during that hour.
 
 The `Load switch threshold` dropdown controls which signed power changes are counted as switches. The default is `300 W`, but the user can raise or lower the threshold from `100 W` to `1500 W` depending on whether the goal is to catch small appliance changes or only larger load steps.
+
+The screenshot above shows the heatmap cards, the threshold selector, and both the recent-day and weekday-pattern views together in the current dashboard.
 
 Why this matters:
 
