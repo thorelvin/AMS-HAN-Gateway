@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import reflex as rx
 
+from .app_meta import APP_AUTHOR, APP_NAME, APP_VERSION
 from .components import dual_bar_card, hero_card, hint_banner, kv, panel, stat_card, tiny_metric
 from .domain.pricing import PRICE_AREAS
 from .state import DashboardState
@@ -1027,10 +1028,16 @@ def index() -> rx.Component:
                 live_heartbeat(),
                 rx.hstack(
                     rx.vstack(
-                        rx.heading("AMS HAN Gateway Tool", size="8"),
+                        rx.heading(APP_NAME, size="8"),
                         rx.text(
                             "Reflex dashboard with replay, cost, diagnostics and signature intelligence.",
                             color=rx.color("gray", 10),
+                        ),
+                        rx.hstack(
+                            rx.badge(f"Dashboard {APP_VERSION}", variant="soft", color_scheme="blue"),
+                            rx.badge(f"Author: {APP_AUTHOR}", variant="soft", color_scheme="gray"),
+                            spacing="2",
+                            wrap="wrap",
                         ),
                         spacing="1",
                         align="start",
