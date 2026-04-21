@@ -3,25 +3,23 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from statistics import mean
 from typing import Any
 
-from .backend.models import DeviceInfo, HistoryRecord, MqttStatus, ParsedLine, SnapshotEvent, StatusLine, WifiStatus
-from .backend.protocol import is_gateway_protocol_line, mask_sensitive_command, parse_line
-from .backend.serial_worker import SerialConfig, SerialManager
+from .backend.models import DeviceInfo, MqttStatus, ParsedLine, SnapshotEvent, StatusLine, WifiStatus
+from .backend.protocol import build_command, mask_sensitive_command, parse_line
+from .backend.serial_worker import SerialManager
 from .backend.storage import SnapshotStore
 from .domain.analysis import (
-    analysis_summary, build_load_heatmaps, daily_graph_data, diagnose_issues, health_rows, history_rows,
-    import_export_bar, parse_meter_dt, phase_analysis, signed_grid_w,
-    top_hour_rows, unified_overview, what_changed,
+    import_export_bar, parse_meter_dt, signed_grid_w, unified_overview,
 )
 from .domain.event_engine import EventEngineV2
 from .domain.frame_parser import parse_kfm001_frame
 from .domain.mains import DEFAULT_MAINS_NETWORK_TYPE, classify_phase_delta, normalize_mains_network_type, parse_phase_delta_text
-from .domain.pricing import GRID_DAY_RATE_NOK_PER_KWH, GRID_NIGHT_RATE_NOK_PER_KWH, PRICE_AREAS, PriceProvider, estimate_capacity
+from .domain.pricing import GRID_DAY_RATE_NOK_PER_KWH, GRID_NIGHT_RATE_NOK_PER_KWH, PRICE_AREAS, PriceProvider
 from .domain.signatures import build_signature_rows, likely_device_hint
+from .services import AnalysisService, ConnectionService, CostService, HistoryService, ReplayService
 from .support.event_log_store import EventLogStore
 from .support.replay_player import ReplayPlayer
 from .support.settings_store import SettingsStore
@@ -32,9 +30,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'event_filter':'all', 'replay_path':'', 'replay_lines_per_tick':4, 'heatmap_switch_threshold':300,
     'mains_network_type': DEFAULT_MAINS_NETWORK_TYPE,
 }
-
-PROBE_TIMEOUT_S = 2.6
-PROBE_RETRY_INTERVAL_S = 0.45
 
 class GatewayService:
     def __init__(
@@ -53,8 +48,10 @@ class GatewayService:
         self.settings = self.settings_store.load()
         self.event_log_store = event_log_store or EventLogStore(self.settings_store.directory/'event_log.json')
         self.db_path = Path(self.settings.get('db_path') or db_path)
-        self.store = snapshot_store or SnapshotStore(self.db_path)
+        self.history_service = HistoryService(self.db_path, snapshot_store=snapshot_store)
+        self.store = self.history_service.store
         self.serial = serial_manager or SerialManager(on_line=self._on_line, on_state=self._on_state)
+        self.connection_service = ConnectionService(self.serial)
         self.mains_network_type = normalize_mains_network_type(self.settings.get('mains_network_type', DEFAULT_MAINS_NETWORK_TYPE))
         self.connection_status='Searching for gateway'
         self.selected_port=str(self.settings.get('last_port',''))
@@ -69,11 +66,12 @@ class GatewayService:
         self.logs: deque[str] = deque(maxlen=1800)
         self.event_log: deque[dict[str, str]] = deque(self.event_log_store.load(), maxlen=1200)
         self.event_engine = EventEngineV2(mains_network_type=self.mains_network_type)
-        self.price_provider = price_provider or PriceProvider()
-        self.replay_player = replay_player or ReplayPlayer()
-        self.replay_records: deque[HistoryRecord] = deque(maxlen=12000)
-        self._replay_row_id = 0
-        self._last_ports_cache: list[tuple[str,str]]=[]
+        self.analysis_service = AnalysisService()
+        self.cost_service = CostService(self.history_service, price_provider=price_provider)
+        self.price_provider = self.cost_service.price_provider
+        self.replay_service = ReplayService(replay_player or ReplayPlayer())
+        self.replay_player = self.replay_service.player
+        self.replay_records = self.history_service.replay_records
         self._last_probe_attempt=0.0
         self._reconnect_interval_s=4.0
         self._data_epoch=0; self._event_epoch=0; self._settings_epoch=0; self._cache={}
@@ -122,11 +120,7 @@ class GatewayService:
 
     @staticmethod
     def _port_from_label(label: str) -> str:
-        text = str(label or '').strip()
-        for separator in (' - ', ' — ', ' â€” ', ' Ã¢â‚¬â€ '):
-            if separator in text:
-                return text.split(separator, 1)[0].strip()
-        return text
+        return ConnectionService.extract_port_name(label)
 
     def _reclassify_event_log_for_mains(self) -> None:
         session_start_info: dict[str, tuple[str, str]] = {}
@@ -183,67 +177,62 @@ class GatewayService:
         self._invalidate_data_cache()
         self._invalidate_event_cache()
 
+    def set_heatmap_switch_threshold(self, threshold: int) -> int:
+        cleaned = max(100, min(1500, int(threshold)))
+        self.settings['heatmap_switch_threshold'] = cleaned
+        self._save_settings()
+        return cleaned
+
+    def set_show_advanced(self, show_advanced: bool) -> bool:
+        self.settings['show_advanced'] = bool(show_advanced)
+        self._save_settings()
+        return bool(self.settings['show_advanced'])
+
+    def set_baudrate(self, baudrate: int) -> int:
+        cleaned = max(1200, int(baudrate))
+        self.settings['baudrate'] = cleaned
+        self._save_settings()
+        return cleaned
+
+    def set_replay_path(self, replay_path: str) -> str:
+        self.settings['replay_path'] = str(replay_path)
+        self._save_settings()
+        return str(self.settings['replay_path'])
+
     def list_ports(self) -> list[str]:
-        self._last_ports_cache = SerialManager.list_ports()
-        return [f"{port} - {description}" if description else port for port, description in self._last_ports_cache]
+        return self.connection_service.list_port_labels()
 
     def preferred_port_label(self) -> str:
         target = self.selected_port or self.settings.get('last_port','')
         if not target:
             return ''
-        target_port = self._port_from_label(target)
-        for port, description in self._last_ports_cache:
-            label = f"{port} - {description}" if description else port
-            if port == target_port or label == target:
-                return label
-        return target
+        return self.connection_service.preferred_port_label(target)
 
-    def _ordered_candidates(self) -> list[tuple[str,str]]:
-        ports = SerialManager.list_ports()
-        self._last_ports_cache = ports
-        preferred = self.settings.get('last_port','')
-        ports = sorted(ports, key=lambda pd: 0 if pd[0]==preferred else 1)
-        return ports
+    def _ordered_candidates(self):
+        preferred = str(self.settings.get('last_port', ''))
+        return self.connection_service.ordered_candidates(preferred)
 
     def _probe_port(self, port: str, baudrate: int) -> bool:
-        try:
-            import serial as pyserial
-            with pyserial.Serial(port, baudrate, timeout=0.25, write_timeout=0.25) as ser:
-                SerialManager._stabilize_port(ser)
-                end = time.monotonic() + PROBE_TIMEOUT_S
-                next_probe = 0.0
-                while time.monotonic() < end:
-                    now = time.monotonic()
-                    if now >= next_probe:
-                        for cmd in (b'GET_INFO\n', b'GET_STATUS\n'):
-                            ser.write(cmd)
-                        ser.flush()
-                        next_probe = now + PROBE_RETRY_INTERVAL_S
-                    line = ser.readline().decode('utf-8', errors='replace').strip()
-                    if line and is_gateway_protocol_line(line):
-                        return True
-            return False
-        except Exception:
-            return False
+        return self.connection_service.probe_port(port, baudrate)
 
     def auto_connect(self, baudrate: int) -> str:
-        if self.replay_player.summary().loaded:
+        if self.replay_service.summary().loaded:
             return 'Replay loaded. Stop replay before hardware auto-connect.'
         if self.serial.connected:
             current_port = self._port_from_label(self.selected_port) if self.selected_port else self.settings.get('last_port', '')
             self.connection_status = f'Connected to {current_port}' if current_port else 'Connected'
             return self.connection_status
-        for port, _desc in self._ordered_candidates():
-            if self._probe_port(port, baudrate):
-                self.connect(port, baudrate)
+        for option in self._ordered_candidates():
+            if self._probe_port(option.port, baudrate):
+                self.connect(option.label, baudrate)
                 if not self.connection_status.startswith('Connected to'):
-                    self.connection_status = f'Connected to {port}'
+                    self.connection_status = f'Connected to {option.port}'
                 return self.connection_status
         self.connection_status='No gateway found'
         return self.connection_status
 
     def auto_reconnect_if_needed(self, baudrate: int):
-        if self.serial.connected or self.replay_player.summary().loaded:
+        if self.serial.connected or self.replay_service.summary().loaded:
             return
         import time
         now=time.time()
@@ -253,32 +242,49 @@ class GatewayService:
         self.auto_connect(baudrate)
 
     def connect(self, port_label: str, baudrate: int):
-        port = self._port_from_label(port_label)
-        self.serial.connect(SerialConfig(port=port, baudrate=baudrate))
-        self.connection_status = f'Connected to {port}'
-        label = port_label
-        for p, d in (self._last_ports_cache or SerialManager.list_ports()):
-            candidate = f"{p} - {d}" if d else p
-            if p == port or candidate == port_label:
-                label = candidate
-                break
-        self.selected_port = label
-        self.settings['last_port']=port
-        self.settings['baudrate']=baudrate
+        result = self.connection_service.connect(port_label, baudrate)
+        self.connection_status = f'Connected to {result.option.port}'
+        self.selected_port = result.option.label
+        self.settings['last_port'] = result.option.port
+        self.settings['baudrate'] = result.baudrate
         self._save_settings()
         self._invalidate_data_cache()
-        self.send_command('GET_INFO')
-        self.send_command('GET_STATUS')
+        self.request_info()
+        self.request_status()
 
     def disconnect(self):
         if self.serial.connected:
-            self.serial.disconnect()
+            self.connection_service.disconnect()
         self.connection_status='Disconnected'
 
     def send_command(self, cmd: str):
         if self.serial.connected:
             self._append_log('TX', mask_sensitive_command(cmd))
-            self.serial.send(cmd)
+            self.connection_service.send(cmd)
+
+    def request_info(self) -> None:
+        self.send_command('GET_INFO')
+
+    def request_status(self) -> None:
+        self.send_command('GET_STATUS')
+
+    def set_wifi_config(self, ssid: str, password: str) -> None:
+        self.send_command(build_command('SET_WIFI', ssid, password))
+
+    def clear_wifi_config(self) -> None:
+        self.send_command('CLEAR_WIFI')
+
+    def set_mqtt_config(self, host: str, port: str | int, user: str = '', password: str = '', prefix: str = '') -> None:
+        self.send_command(build_command('SET_MQTT', host, port, user, password, prefix))
+
+    def enable_mqtt(self) -> None:
+        self.send_command('MQTT_ENABLE')
+
+    def disable_mqtt(self) -> None:
+        self.send_command('MQTT_DISABLE')
+
+    def republish_discovery(self) -> None:
+        self.send_command('REPUBLISH_DISCOVERY')
 
     def _on_state(self, connected: bool, message: str):
         with self._lock:
@@ -286,15 +292,11 @@ class GatewayService:
             self._append_log('INFO', message)
             self._invalidate_data_cache()
 
-    def _history_records_desc(self, limit: int = 500) -> list[HistoryRecord]:
-        if self.replay_records:
-            return list(self.replay_records)[:limit]
-        return self.store.get_recent(limit)
+    def _history_records_desc(self, limit: int = 500):
+        return self.history_service.records_desc(limit)
 
-    def _all_records_desc(self) -> list[HistoryRecord]:
-        if self.replay_records:
-            return list(self.replay_records)
-        return self.store.get_all()
+    def _all_records_desc(self):
+        return self.history_service.all_records_desc()
 
     def _derive_baseline(self, current_ts: str, lookback_records: list[HistoryRecord]) -> dict[str, Any] | None:
         vals=[]
@@ -310,11 +312,7 @@ class GatewayService:
         return {'signed_grid_w': med}
 
     def _record_history(self, snap: SnapshotEvent):
-        if self.replay_player.summary().loaded:
-            self._replay_row_id +=1
-            self.replay_records.appendleft(HistoryRecord(row_id=self._replay_row_id, received_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'), snapshot=snap))
-        else:
-            self.store.save_snapshot(snap)
+        self.history_service.record_snapshot(snap, replay_mode=self.replay_service.summary().loaded)
 
     def _snapshot_sample(self, snap: SnapshotEvent) -> dict[str, Any]:
         detail = self.latest_kfm_detail or {}
@@ -390,62 +388,106 @@ class GatewayService:
         self.recent_phase_samples.clear(); self.event_engine=EventEngineV2(mains_network_type=self.mains_network_type); self._invalidate_data_cache(); self._invalidate_event_cache()
 
     def _clear_replay_runtime(self):
-        self.replay_records.clear(); self._replay_row_id=0; self._reset_live_buffers()
+        self.history_service.clear_replay()
+        self._reset_live_buffers()
 
     def load_replay_file(self, path: str) -> str:
-        p=Path(path).expanduser()
+        p = Path(path).expanduser()
         if not p.exists():
-            msg=f'Replay file not found: {p}'; self._append_log('WARN', msg); return msg
-        if self.serial.connected: self.serial.disconnect()
-        self.replay_player.load_file(p)
-        self.settings['replay_path']=str(p); self._save_settings(); self._clear_replay_runtime(); self.connection_status=f'Replay loaded: {p.name}'; self._append_log('INFO', self.connection_status); return self.connection_status
+            msg = f'Replay file not found: {p}'
+            self._append_log('WARN', msg)
+            return msg
+        if self.serial.connected:
+            self.connection_service.disconnect()
+        self.replay_service.load_file(p)
+        self.set_replay_path(str(p))
+        self._clear_replay_runtime()
+        self.connection_status = f'Replay loaded: {p.name}'
+        self._append_log('INFO', self.connection_status)
+        return self.connection_status
 
     def load_replay_lines(self, lines: list[str], source_name: str = 'uploaded.log') -> str:
-        if self.serial.connected: self.serial.disconnect()
-        self.replay_player.load_lines(lines, source_name)
-        self._clear_replay_runtime(); self.connection_status=f'Replay loaded: {source_name}'; self._append_log('INFO', self.connection_status); return self.connection_status
+        if self.serial.connected:
+            self.connection_service.disconnect()
+        self.replay_service.load_lines(lines, source_name)
+        self._clear_replay_runtime()
+        self.connection_status = f'Replay loaded: {source_name}'
+        self._append_log('INFO', self.connection_status)
+        return self.connection_status
 
     def load_demo_replay(self) -> str:
-        demo_path=default_demo_replay_path()
-        if self.serial.connected: self.serial.disconnect()
-        self.replay_player.load_file(demo_path, demo=True)
-        self._clear_replay_runtime(); self.connection_status=f'Demo replay loaded: {demo_path.name}'; self._append_log('INFO', self.connection_status); return self.connection_status
+        demo_path = default_demo_replay_path()
+        if self.serial.connected:
+            self.connection_service.disconnect()
+        self.replay_service.load_file(demo_path, demo=True)
+        self._clear_replay_runtime()
+        self.connection_status = f'Demo replay loaded: {demo_path.name}'
+        self._append_log('INFO', self.connection_status)
+        return self.connection_status
 
     def start_replay(self) -> str:
-        summary=self.replay_player.summary()
-        if not summary.loaded: return 'No replay loaded'
-        self.replay_player.start(); self.connection_status=f'Replay playing: {summary.source_name}'; self._append_log('INFO', self.connection_status); return self.connection_status
+        summary = self.replay_service.summary()
+        if not summary.loaded:
+            return 'No replay loaded'
+        self.replay_service.start()
+        self.connection_status = f'Replay playing: {summary.source_name}'
+        self._append_log('INFO', self.connection_status)
+        return self.connection_status
+
     def pause_or_resume_replay(self) -> str:
-        summary=self.replay_player.summary()
-        if not summary.loaded: return 'No replay loaded'
+        summary = self.replay_service.summary()
+        if not summary.loaded:
+            return 'No replay loaded'
         if summary.active:
-            self.replay_player.pause(); self.connection_status=f'Replay paused: {summary.source_name}'
+            self.replay_service.pause()
+            self.connection_status = f'Replay paused: {summary.source_name}'
         else:
-            self.replay_player.resume(); self.connection_status=f'Replay playing: {summary.source_name}'
-        self._append_log('INFO', self.connection_status); return self.connection_status
+            self.replay_service.resume()
+            self.connection_status = f'Replay playing: {summary.source_name}'
+        self._append_log('INFO', self.connection_status)
+        return self.connection_status
+
     def stop_replay(self) -> str:
-        summary=self.replay_player.summary(); name=summary.source_name or 'replay'
-        self.replay_player.stop(unload=True); self._clear_replay_runtime(); self.connection_status='Replay stopped'; self._append_log('INFO', f'Stopped {name}'); return self.connection_status
+        summary = self.replay_service.summary()
+        name = summary.source_name or 'replay'
+        self.replay_service.stop(unload=True)
+        self._clear_replay_runtime()
+        self.connection_status = 'Replay stopped'
+        self._append_log('INFO', f'Stopped {name}')
+        return self.connection_status
+
     def advance_replay(self, max_lines: int | None = None) -> int:
-        summary=self.replay_player.summary()
-        if not summary.loaded: return 0
-        line_budget=max_lines or int(self.settings.get('replay_lines_per_tick',4) or 4)
-        emitted=0
-        for raw in self.replay_player.advance(line_budget):
-            self._on_line(raw); emitted +=1
-        new_summary=self.replay_player.summary()
+        summary = self.replay_service.summary()
+        if not summary.loaded:
+            return 0
+        line_budget = max_lines or int(self.settings.get('replay_lines_per_tick', 4) or 4)
+        emitted = 0
+        for raw in self.replay_service.advance(line_budget):
+            self._on_line(raw)
+            emitted += 1
+        new_summary = self.replay_service.summary()
         if summary.active and not new_summary.active and new_summary.position >= new_summary.total:
-            self.connection_status=f'Replay finished: {new_summary.source_name}'; self._append_log('INFO', self.connection_status)
+            self.connection_status = f'Replay finished: {new_summary.source_name}'
+            self._append_log('INFO', self.connection_status)
         return emitted
-    def replay_summary(self)->dict[str,Any]:
-        s=self.replay_player.summary()
-        return {'loaded':s.loaded,'active':s.active,'paused':s.paused,'demo':s.demo,'source_name':s.source_name,'status_text':s.status_text,'progress_text':s.progress_text}
+
+    def replay_summary(self) -> dict[str, Any]:
+        summary = self.replay_service.summary()
+        return {
+            'loaded': summary.loaded,
+            'active': summary.active,
+            'paused': summary.paused,
+            'demo': summary.demo,
+            'source_name': summary.source_name,
+            'status_text': summary.status_text,
+            'progress_text': summary.progress_text,
+        }
 
     # Data accessors
     def logs_list(self, limit: int = 300) -> list[str]:
         return list(self.logs)[:limit]
     def has_cached_snapshot(self) -> bool:
-        return self.latest_snapshot is not None and not self.serial.connected and not self.replay_player.summary().active
+        return self.latest_snapshot is not None and not self.serial.connected and not self.replay_service.summary().active
     def snapshot_dict(self) -> dict[str, Any]:
         from .domain.analysis import signed_grid_w
         s=self.latest_snapshot; d=self.latest_kfm_detail
@@ -459,35 +501,76 @@ class GatewayService:
     def unified_overview(self): return unified_overview(self.latest_snapshot)
     def import_export_bar(self, limit: int=500):
         return import_export_bar(self.latest_snapshot, self._history_records_desc(limit))
-    def get_history_rows(self, limit: int=200): return history_rows(self._history_records_desc(limit))
-    def get_summary(self, limit: int=500):
-        if self.replay_records:
-            recs=self._history_records_desc(limit)
-            if not recs: return {'count':0,'avg_import_w':0.0,'avg_net_w':0.0,'max_import_w':0.0,'min_net_w':0.0,'max_net_w':0.0,'latest_received_at':'-'}
-            avg_import=mean([r.snapshot.import_w for r in recs]); avg_net=mean([r.snapshot.net_power_w for r in recs]); max_import=max(r.snapshot.import_w for r in recs); min_net=min(r.snapshot.net_power_w for r in recs); max_net=max(r.snapshot.net_power_w for r in recs); latest=recs[0].received_at
-            return {'count':len(recs),'avg_import_w':avg_import,'avg_net_w':avg_net,'max_import_w':max_import,'min_net_w':min_net,'max_net_w':max_net,'latest_received_at':latest}
-        s=self.store.get_summary(limit)
-        return {'count':s.count,'avg_import_w':s.avg_import_w,'avg_net_w':s.avg_net_w,'max_import_w':s.max_import_w,'min_net_w':s.min_net_w,'max_net_w':s.max_net_w,'latest_received_at':s.latest_received_at}
-    def analysis_summary(self, limit: int=1000): return analysis_summary(self._history_records_desc(limit))
-    def phase_analysis(self, limit: int=300): return phase_analysis(list(self.recent_phase_samples)[-limit:], self._history_records_desc(limit), mains_network_type=self.mains_network_type)
-    def top_hour_rows(self, limit: int=2000, top_n: int=8): return top_hour_rows(self._all_records_desc()[:limit], top_n)
-    def event_tracker_rows(self, limit: int=80, event_filter: str='all'):
-        rows=[]
-        for event in list(self.event_log):
-            if event_filter=='open' and event.get('status')!='open': continue
-            if event_filter=='resolved' and event.get('status')!='resolved': continue
-            if event_filter=='severe' and event.get('severity') not in ('high','critical'): continue
-            if event_filter in ('power','voltage','phase','connectivity','data_quality') and event.get('category') != event_filter: continue
-            rows.append({
-                'time':event.get('time','-'),'type':event.get('type', event.get('event_type','-')),'status':event.get('status','-'),'severity':event.get('severity','-'),'confidence':event.get('conf', event.get('confidence','-')),
-                'delta_signed':event.get('dW', event.get('delta_signed','-')),'phase':event.get('phase','-'),'voltages':event.get('voltages','-'),'phase_delta':event.get('phase_delta','-'),'note':event.get('note','-'),'summary':event.get('summary','-'),'category':event.get('category','-')
-            })
-            if len(rows)>=limit: break
-        return rows
-    def daily_graph_data(self, limit: int=6000): return daily_graph_data(self._all_records_desc()[:limit])
-    def load_heatmaps(self, limit: int=6000, switch_threshold_w: float = 300.0): return build_load_heatmaps(self._all_records_desc()[:limit], switch_threshold_w=switch_threshold_w, mains_network_type=self.mains_network_type)
-    def diagnostics_summary(self, limit:int=80, event_filter:str='all'):
-        phase=self.phase_analysis(); events=self.event_tracker_rows(limit,event_filter); issues=diagnose_issues(events, phase, self.connection_status, self.wifi_status.state); health=health_rows(self.connection_status, self.wifi_status.state, self.mqtt_status.state, self.last_frame_seq, self.last_frame_len, self.latest_snapshot, len(self.event_log)); return {'issues':issues,'health':health,'phase':phase,'what_changed':what_changed(self.latest_snapshot, events)}
+    def get_history_rows(self, limit: int = 200):
+        return self.analysis_service.history_rows(self._history_records_desc(limit))
+
+    def get_summary(self, limit: int = 500):
+        summary = self.history_service.summary(limit)
+        return {
+            'count': summary.count,
+            'avg_import_w': summary.avg_import_w,
+            'avg_net_w': summary.avg_net_w,
+            'max_import_w': summary.max_import_w,
+            'min_net_w': summary.min_net_w,
+            'max_net_w': summary.max_net_w,
+            'latest_received_at': summary.latest_received_at,
+        }
+
+    def analysis_summary(self, limit: int = 1000):
+        return self.analysis_service.analysis_summary(self._history_records_desc(limit))
+
+    def phase_analysis(self, limit: int = 300):
+        return self.analysis_service.phase_analysis(
+            list(self.recent_phase_samples)[-limit:],
+            self._history_records_desc(limit),
+            mains_network_type=self.mains_network_type,
+        )
+
+    def top_hour_rows(self, limit: int = 2000, top_n: int = 8):
+        return self.analysis_service.top_hour_rows(self._all_records_desc()[:limit], top_n=top_n)
+
+    def event_tracker_rows(self, limit: int = 80, event_filter: str = 'all'):
+        return self.analysis_service.diagnostics_summary(
+            recent_phase_samples=list(self.recent_phase_samples),
+            history_records=self._history_records_desc(max(limit, 300)),
+            connection_status=self.connection_status,
+            wifi_state=self.wifi_status.state,
+            mqtt_state=self.mqtt_status.state,
+            last_frame_seq=self.last_frame_seq,
+            last_frame_len=self.last_frame_len,
+            latest_snapshot=self.latest_snapshot,
+            event_log=list(self.event_log),
+            event_filter=event_filter,
+            limit=limit,
+            mains_network_type=self.mains_network_type,
+        )['events']
+
+    def daily_graph_data(self, limit: int = 6000):
+        return self.analysis_service.daily_graph_data(self._all_records_desc()[:limit])
+
+    def load_heatmaps(self, limit: int = 6000, switch_threshold_w: float = 300.0):
+        return self.analysis_service.load_heatmaps(
+            self._all_records_desc()[:limit],
+            switch_threshold_w=switch_threshold_w,
+            mains_network_type=self.mains_network_type,
+        )
+
+    def diagnostics_summary(self, limit: int = 80, event_filter: str = 'all'):
+        return self.analysis_service.diagnostics_summary(
+            recent_phase_samples=list(self.recent_phase_samples),
+            history_records=self._history_records_desc(max(limit, 300)),
+            connection_status=self.connection_status,
+            wifi_state=self.wifi_status.state,
+            mqtt_state=self.mqtt_status.state,
+            last_frame_seq=self.last_frame_seq,
+            last_frame_len=self.last_frame_len,
+            latest_snapshot=self.latest_snapshot,
+            event_log=list(self.event_log),
+            event_filter=event_filter,
+            limit=limit,
+            mains_network_type=self.mains_network_type,
+        )
+
     def _signature_observed_dates(self, limit: int = 6000) -> list[str]:
         observed: list[str] = []
         seen: set[str] = set()
@@ -498,85 +581,52 @@ class GatewayService:
                 seen.add(day_text)
                 observed.append(day_text)
         return observed
-    def signature_rows(self, limit:int=12, coverage_limit: int = 6000):
+
+    def signature_rows(self, limit: int = 12, coverage_limit: int = 6000):
         key = self._cache_key('signature_rows', limit, coverage_limit)
-        return self._cache_get_or_set(key, lambda: build_signature_rows(list(self.event_log), limit, observed_dates=self._signature_observed_dates(coverage_limit)))
+        return self._cache_get_or_set(
+            key,
+            lambda: self.analysis_service.signature_rows(
+                list(self.event_log),
+                limit=limit,
+                observed_dates=self._signature_observed_dates(coverage_limit),
+            ),
+        )
 
     # Cost integration
-    def save_cost_settings(self, *, price_area:str, grid_day_rate:float, grid_night_rate:float):
-        self.settings['price_area']=price_area; self.settings['grid_day_rate']=grid_day_rate; self.settings['grid_night_rate']=grid_night_rate; self._save_settings()
+    def save_cost_settings(self, *, price_area: str, grid_day_rate: float, grid_night_rate: float):
+        self.settings['price_area'] = price_area
+        self.settings['grid_day_rate'] = grid_day_rate
+        self.settings['grid_night_rate'] = grid_night_rate
+        self._save_settings()
 
-    def _integrated_intervals(self, limit:int=8000):
-        recs = list(reversed(self._all_records_desc()[:limit]))  # oldest -> newest
-        rows=[]
-        prev_dt=None; prev_snap=None
-        for rec in recs:
-            dt=parse_meter_dt(rec.snapshot.timestamp)
-            if dt is None: continue
-            if prev_dt is not None and prev_snap is not None:
-                delta_h=max(0.0,(dt-prev_dt).total_seconds()/3600.0)
-                if 0 < delta_h < 0.5:
-                    rows.append({'start':prev_dt,'end':dt,'hours':delta_h,'import_kw':prev_snap.import_w/1000.0,'export_kw':prev_snap.export_w/1000.0})
-            prev_dt=dt; prev_snap=rec.snapshot
-        return rows
-
-    def cost_summary(self, limit:int=8000):
-        area=str(self.settings.get('price_area','NO3')); day=float(self.settings.get('grid_day_rate',GRID_DAY_RATE_NOK_PER_KWH)); night=float(self.settings.get('grid_night_rate',GRID_NIGHT_RATE_NOK_PER_KWH))
-        now=datetime.now().astimezone(); price_quote=self.price_provider.quote_for_hour(area, now); spot=float(price_quote.nok_per_kwh); grid=self.price_provider.current_grid_rate(now.hour, day, night); total=spot+grid
-        snap=self.latest_snapshot
-        import_cost_now=((snap.import_w/1000.0)*total) if snap else 0.0
-        export_value_now=((snap.export_w/1000.0)*spot) if snap else 0.0
-        intervals=self._integrated_intervals(limit)
-        daily_import=daily_export=current_hour_import=0.0
-        latest_day=max((i['start'].date() for i in intervals), default=None)
-        current_hour = now.strftime('%Y-%m-%d %H')
-        bucket_map={}
-        fallback_bucket_keys: set[str] = set()
-        for i in intervals:
-            st=i['start'].astimezone(); hour_quote=self.price_provider.quote_for_hour(area, st); spot_h=hour_quote.nok_per_kwh; grid_h=self.price_provider.current_grid_rate(st.hour, day, night); total_h=spot_h+grid_h
-            imp_cost=i['import_kw']*i['hours']*total_h
-            exp_val=i['export_kw']*i['hours']*spot_h
-            if latest_day and st.date()==latest_day:
-                daily_import += imp_cost; daily_export += exp_val
-                key=st.strftime('%Y-%m-%d %H')
-                if hour_quote.fallback_used:
-                    fallback_bucket_keys.add(key)
-                b=bucket_map.setdefault(key, {'day':st.strftime('%Y-%m-%d'),'hour':st.strftime('%H'),'import_kwh':0.0,'export_kwh':0.0,'import_cost_nok':0.0,'export_value_nok':0.0,'spot_nok_kwh':spot_h,'grid_nok_kwh':grid_h,'total_nok_kwh':total_h,'duration_h':0.0})
-                b['import_kwh'] += i['import_kw']*i['hours']; b['export_kwh'] += i['export_kw']*i['hours']; b['import_cost_nok'] += imp_cost; b['export_value_nok'] += exp_val; b['duration_h'] += i['hours']
-                if key == current_hour:
-                    current_hour_import += imp_cost
-        rows=[]
-        for key in sorted(bucket_map.keys()):
-            b=bucket_map[key]
-            dur=max(b['duration_h'],1e-6)
-            rows.append({'hour':b['hour'],'day':b['day'],'spot_nok_kwh':round(b['spot_nok_kwh'],3),'grid_nok_kwh':round(b['grid_nok_kwh'],3),'total_nok_kwh':round(b['total_nok_kwh'],3),'import_kw':round(b['import_kwh']/dur,3),'export_kw':round(b['export_kwh']/dur,3),'import_cost_nok':round(b['import_cost_nok'],3),'export_value_nok':round(b['export_value_nok'],3),'net_cost_nok':round(b['import_cost_nok']-b['export_value_nok'],3)})
-        hourly_for_capacity=[]
-        month = latest_day.strftime('%Y-%m') if latest_day else ''
-        for r in rows:
-            if month and r['day'].startswith(month):
-                hourly_for_capacity.append({'day':r['day'],'hour':r['hour'],'avg_import_kw':r['import_kw']})
-        cap = estimate_capacity(hourly_for_capacity)
-        warnings: list[str] = []
-        if price_quote.warning_text:
-            warnings.append(price_quote.warning_text)
-        if fallback_bucket_keys:
-            warnings.append(f'Historical hourly cost rows used fallback spot pricing in {len(fallback_bucket_keys)} bucket(s).')
-        warning_text = ' '.join(text for text in warnings if text).strip()
-        spot_label = 'estimated spot' if price_quote.fallback_used else 'spot'
-        return {'source_text':f"{price_quote.source_name} - {area} - {price_quote.source_note}",'spot_now_text':f'{spot:.3f} NOK/kWh {spot_label}','grid_now_text':f"{grid:.3f} NOK/kWh {self.price_provider.current_grid_rate_label(now.hour)}",'total_now_text':f'{total:.3f} NOK/kWh total','import_cost_now_text':f'{import_cost_now:.2f} NOK/h current import cost','export_value_now_text':f'{export_value_now:.2f} NOK/h current export value','daily_import_cost_text':f'{daily_import:.2f} NOK daily import cost','daily_export_value_text':f'{daily_export:.2f} NOK daily export value','daily_net_cost_text':f'{daily_import-daily_export:.2f} NOK daily net cost','current_hour_cost_text':f'{current_hour_import:.2f} NOK current hour import est.','capacity_step_text':cap['step_label'],'capacity_price_text':cap['step_price_text'],'capacity_basis_text':cap['basis_text'],'capacity_warning_text':cap['warning_text'],'warning_text':warning_text,'rows':rows}
+    def cost_summary(self, limit: int = 8000):
+        area = str(self.settings.get('price_area', 'NO3'))
+        day = float(self.settings.get('grid_day_rate', GRID_DAY_RATE_NOK_PER_KWH))
+        night = float(self.settings.get('grid_night_rate', GRID_NIGHT_RATE_NOK_PER_KWH))
+        return self.cost_service.build_summary(
+            latest_snapshot=self.latest_snapshot,
+            area=area,
+            day_rate=day,
+            night_rate=night,
+            limit=limit,
+        ).as_dict()
 
     def clear_history(self):
         with self._lock:
-            self.store.clear_history()
-            self.replay_records.clear()
-            self._replay_row_id = 0
+            self.history_service.clear_history()
+            self.store = self.history_service.store
             self._append_log('INFO', 'Snapshot history cleared')
             self._invalidate_data_cache()
             self._invalidate_event_cache()
 
     def set_db_path(self, path: str):
-        self.db_path=Path(path); self.store=SnapshotStore(self.db_path); self.settings['db_path']=str(self.db_path); self._save_settings(); self._invalidate_data_cache();
-
+        self.db_path = Path(path)
+        self.history_service.set_db_path(self.db_path)
+        self.store = self.history_service.store
+        self.settings['db_path'] = str(self.db_path)
+        self._save_settings()
+        self._invalidate_data_cache()
 
 def default_db_path() -> Path:
     return Path.home()/'.ams_han_gateway_tool'/'snapshot_history.sqlite3'
@@ -587,4 +637,3 @@ def default_settings_path() -> Path:
 def default_demo_replay_path() -> Path:
     return Path(__file__).resolve().parent.parent/'fixtures'/'demo_session.log'
 
-gateway_service = GatewayService(default_db_path())

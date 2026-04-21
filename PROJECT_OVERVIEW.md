@@ -34,14 +34,15 @@ This gives the Reflex app a concrete protocol target rather than a generic exter
 
 ### 2. Application service
 
-`ams_han_reflex_app/service.py` is the central orchestration layer. It manages:
+`ams_han_reflex_app/service.py` now acts as a thinner orchestration layer. The runtime is split more explicitly across:
 
-- serial connectivity
-- settings persistence
-- snapshot storage
-- event logging
-- replay playback
-- cached summaries for the UI
+- `services/connection_service.py` for port discovery, probing, and connection resolution
+- `services/replay_service.py` for replay loading and playback state
+- `services/history_service.py` for persisted and replay-backed snapshot history
+- `services/analysis_service.py` for diagnostics, heatmaps, signature shaping, and history views
+- `services/cost_service.py` for price-area context, hourly cost rows, and capacity estimation
+
+This keeps `GatewayService` focused on runtime coordination instead of feature-specific implementation details.
 
 ### 3. Domain logic
 
@@ -65,6 +66,8 @@ The domain layer is responsible for turning raw measurements into operator-facin
 - cost and capacity views
 - history and database tools
 - advanced controls for serial, replay, Wi-Fi, MQTT, and electrical-model workflows
+
+Architectural dependency rules for the repository are documented in `docs/ARCHITECTURE_BOUNDARIES.md`.
 
 ## Core capabilities
 
@@ -95,6 +98,7 @@ The domain layer is responsible for turning raw measurements into operator-facin
 - `NO1` to `NO5` spot-price context
 - configurable day and night grid rates
 - explicit UI warnings when live spot pricing falls back to an estimate
+- background spot-price refresh so the dashboard does not block on external price fetches in the hot UI path
 - capacity estimate based on top import hours on different days
 
 ### Replay and development support
@@ -145,12 +149,15 @@ Recent work has improved the repository with:
 - explicit cost-source warnings instead of silent spot-price fallback
 - extracted firmware source tree for normal diffs, search, and review
 - replay-driven service workflow coverage in the automated tests
+- explicit escaped command encoding on the Python side together with firmware-side unescaping and validation
+- one-command local launch path via `python scripts/run_dashboard.py`
 - refreshed documentation aligned with both the bundled ESP-IDF gateway source and the standard used in the related PC-side repository
 
 ## Near-term improvement areas
 
 - more automated coverage for parsing, pricing, and diagnostics
+- further decomposition of the Reflex state layer into smaller feature-focused modules
 - expanded replay scenarios for additional failure and appliance patterns
 - deeper export and solar analytics
 - broader gateway protocol documentation
-- packaging and deployment improvements for easier setup
+- packaging and deployment improvements beyond the current local launch helper

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 from urllib.request import urlopen
 import json
+import threading
 
 PRICE_AREAS = ['NO1', 'NO2', 'NO3', 'NO4', 'NO5']
 GRID_DAY_RATE_NOK_PER_KWH = 0.4254
@@ -39,6 +40,8 @@ class PriceQuote:
 class PriceProvider:
     def __init__(self, fallback_price_nok_per_kwh: float = FALLBACK_SPOT_PRICE_NOK_PER_KWH) -> None:
         self._cache: dict[tuple[str, str], PriceDayResult] = {}
+        self._cache_lock = threading.Lock()
+        self._inflight: set[tuple[str, str]] = set()
         self.fallback_price_nok_per_kwh = float(fallback_price_nok_per_kwh)
 
     def _day_key(self, dt: datetime) -> str:
@@ -46,8 +49,9 @@ class PriceProvider:
 
     def _fetch_day(self, area: str, dt: datetime) -> PriceDayResult:
         key = (area, self._day_key(dt))
-        if key in self._cache:
-            return self._cache[key]
+        with self._cache_lock:
+            if key in self._cache:
+                return self._cache[key]
         url = f"https://www.hvakosterstrommen.no/api/v1/prices/{dt.year}/{dt.month:02d}-{dt.day:02d}_{area}.json"
         data: list[dict[str, Any]] = []
         warning_text = ''
@@ -66,11 +70,42 @@ class PriceProvider:
         if not data and not warning_text:
             warning_text = f'No spot prices were returned for {area} {self._day_key(dt)}.'
         result = PriceDayResult(entries=data, warning_text=warning_text)
-        self._cache[key] = result
+        with self._cache_lock:
+            self._cache[key] = result
+            self._inflight.discard(key)
         return result
 
+    def _start_background_fetch(self, area: str, dt: datetime) -> None:
+        key = (area, self._day_key(dt))
+        with self._cache_lock:
+            if key in self._cache or key in self._inflight:
+                return
+            self._inflight.add(key)
+        thread = threading.Thread(
+            target=self._fetch_day,
+            args=(area, dt),
+            name=f"price-fetch-{area}-{key[1]}",
+            daemon=True,
+        )
+        thread.start()
+
     def quote_for_hour(self, area: str, dt: datetime) -> PriceQuote:
-        day = self._fetch_day(area, dt)
+        key = (area, self._day_key(dt))
+        with self._cache_lock:
+            day = self._cache.get(key)
+        if day is None:
+            self._start_background_fetch(area, dt)
+            warning = (
+                f"Spot prices for {area} {self._day_key(dt)} are still loading in the background. "
+                f"Using explicit fallback estimate {self.fallback_price_nok_per_kwh:.3f} NOK/kWh for now."
+            )
+            return PriceQuote(
+                nok_per_kwh=self.fallback_price_nok_per_kwh,
+                source_name="Background price refresh",
+                source_note=f"{area} live spot price loading",
+                fallback_used=True,
+                warning_text=warning,
+            )
         target_hour = dt.hour
         source_note = f'{area} spot prices ex VAT from hvakosterstrommen.no'
         for row in day.entries:

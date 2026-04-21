@@ -66,6 +66,16 @@ The hardware is connected as follows:
 
 This matches the current firmware configuration in the repository, where the HAN UART is set to `2400` baud on `UART2`.
 
+## Quick launch path
+
+For a simpler local start path, the repository now includes:
+
+```bash
+python scripts/run_dashboard.py
+```
+
+That helper installs the Python requirements and starts the Reflex dashboard from the repository root.
+
 ## Dashboard screenshots
 
 The screenshots below show the current interface and the main operator views available in the dashboard.
@@ -239,22 +249,37 @@ The local Python application is responsible for:
 - building Load Signatures and hourly/weekly heatmap summaries from stored history
 - supporting replay-based development and troubleshooting
 
+The application side is now split more clearly across a small service layer:
+
+- `service.py` acts as the thin runtime coordinator
+- `services/connection_service.py` owns port discovery, probing, and connection resolution
+- `services/replay_service.py` owns replay loading and playback state
+- `services/history_service.py` owns persisted and replay-backed snapshot history
+- `services/analysis_service.py` owns diagnostics, heatmaps, and signature shaping
+- `services/cost_service.py` owns hourly and daily pricing context
+
+Architecture rules for those boundaries are documented in [docs/ARCHITECTURE_BOUNDARIES.md](docs/ARCHITECTURE_BOUNDARIES.md).
+
 ## Repository structure
 
 ```text
 .
 |-- ams_han_reflex_app/
 |   |-- ams_han_reflex_app.py
+|   |-- app_context.py
 |   |-- service.py
 |   |-- state.py
 |   |-- backend/
 |   |-- domain/
+|   |-- services/
 |   `-- support/
 |-- docs/
+|   |-- ARCHITECTURE_BOUNDARIES.md
 |   `-- images/
 |-- firmware/
 |   `-- esp_idf_ams_han_gateway_wroom32d/
 |-- fixtures/
+|-- scripts/
 |-- tests/
 |-- PROJECT_OVERVIEW.md
 |-- README.md
@@ -262,10 +287,12 @@ The local Python application is responsible for:
 `-- rxconfig.py
 ```
 
-- `ams_han_reflex_app/` contains the Reflex UI, application service, parsing, diagnostics, pricing, and replay support.
+- `ams_han_reflex_app/` contains the Reflex UI, service coordination, parsing, diagnostics, pricing, and replay support.
+- `docs/ARCHITECTURE_BOUNDARIES.md` documents intended layer boundaries and allowed dependency direction.
 - `docs/images/` contains README screenshots and hardware reference images.
 - `firmware/esp_idf_ams_han_gateway_wroom32d/` contains the ESP-IDF firmware project for the ESP32 gateway in a reviewable source layout.
 - `fixtures/` contains bundled replay logs for testing gateway and dashboard behavior without live data.
+- `scripts/run_dashboard.py` provides a one-command local dashboard launch path.
 - `tests/` contains regression coverage for replay loading, protocol parsing, heatmap analysis, service behavior, signature grouping, and a replay-driven service workflow.
 - `PROJECT_OVERVIEW.md` provides a concise engineering summary of the repository.
 
@@ -342,6 +369,12 @@ Supported commands in the current source include:
 - `REBOOT`
 - `FACTORY_RESET`
 
+The command format is still line-based, but it is now less brittle than before:
+
+- Python command building escapes commas and backslashes in `SET_WIFI` and `SET_MQTT`
+- the firmware command parser now unescapes those fields before validation
+- this makes SSIDs, usernames, passwords, and topic prefixes safer when they contain separator-like characters
+
 Current response and data lines include:
 
 - `RSP:OK`
@@ -379,10 +412,16 @@ pip install -r requirements.txt
 
 ### 1. Start the dashboard
 
-From the repository root, run:
+From the repository root, run either:
 
 ```bash
 reflex run
+```
+
+or:
+
+```bash
+python scripts/run_dashboard.py
 ```
 
 The app will compile the Reflex frontend and start the local dashboard.
@@ -466,7 +505,7 @@ Current analysis and diagnostics include:
 
 ## Testing
 
-Current automated coverage is still lightweight, but it now covers the main analysis and transport building blocks:
+Current automated coverage is still intentionally compact, but it now protects several of the highest-value seams in the repository:
 
 ```bash
 python -m unittest
@@ -476,10 +515,12 @@ This currently checks:
 
 - replay lines can be loaded into a usable playback session
 - protocol parsing accepts expected gateway line formats
+- command encoding escapes commas and backslashes correctly for `SET_WIFI` and `SET_MQTT`
 - serial auto-connect does not reconnect an already-open link
 - signature grouping produces representative watt values
 - heatmap analysis produces stable hourly and weekday outputs
 - a replay-driven service workflow can build stored history, heatmaps, and cost summaries from realistic gateway lines
+- price quotes fall back immediately while background refresh is in flight, then use cached day data once available
 
 ## Related repositories
 
@@ -513,6 +554,8 @@ The repository currently provides:
 - user-selectable `TN` and `IT` mains interpretation across events, signatures, and heatmaps
 - theme switching, advanced tools, and improved hourly-cost rendering
 - lighter refresh behavior so heavier tabs do not churn in the background unnecessarily
+- explicit service boundaries for connection, replay, history, analysis, and cost handling
+- explicit architecture-boundary documentation and a simpler one-command local launch path
 
 The project is active and structured for continued iteration around replay coverage, gateway integration, and deeper analysis features.
 

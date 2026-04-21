@@ -20,6 +20,11 @@ static app_config_t s_cfg;
 static han_snapshot_t s_last_snapshot;
 static bool s_have_snapshot = false;
 
+typedef struct {
+    size_t count;
+    char *fields[8];
+} command_fields_t;
+
 static void publish_status(void) {
     serial_link_send_wifi_status(wifi_manager_get_state(), wifi_manager_get_ip());
     serial_link_send_mqtt_status(app_mqtt_get_state());
@@ -37,13 +42,78 @@ static void apply_runtime_config(void) {
     }
 }
 
+static bool split_command_fields(const char *line, char *buffer, size_t buffer_size, command_fields_t *out) {
+    size_t src = 0;
+    size_t dst = 0;
+    size_t count = 0;
+
+    if (!line || !buffer || !out || buffer_size == 0) {
+        return false;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->fields[count++] = &buffer[0];
+
+    while (line[src] != '\0') {
+        char ch = line[src++];
+        if (ch == '\\') {
+            char next = line[src];
+            if (next == '\0') {
+                ch = '\\';
+            } else {
+                src++;
+                if (next == 'n') {
+                    ch = '\n';
+                } else if (next == 'r') {
+                    ch = '\r';
+                } else {
+                    ch = next;
+                }
+            }
+        } else if (ch == ',') {
+            if (dst + 1 >= buffer_size || count >= (sizeof(out->fields) / sizeof(out->fields[0]))) {
+                return false;
+            }
+            buffer[dst++] = '\0';
+            out->fields[count++] = &buffer[dst];
+            continue;
+        }
+
+        if (dst + 1 >= buffer_size) {
+            return false;
+        }
+        buffer[dst++] = ch;
+    }
+
+    buffer[dst] = '\0';
+    out->count = count;
+    return true;
+}
+
+static bool require_field_count(const command_fields_t *fields, size_t min_count, const char *error_reason) {
+    if (!fields || fields->count < min_count) {
+        serial_link_send_error(error_reason);
+        return false;
+    }
+    return true;
+}
+
 static void handle_command(const char *line) {
-    if (strcmp(line, "GET_INFO") == 0) {
+    char copy[SERIAL_LINE_MAX];
+    command_fields_t fields;
+    if (!split_command_fields(line, copy, sizeof(copy), &fields) || fields.count == 0) {
+        serial_link_send_error("bad_command_encoding");
+        return;
+    }
+
+    const char *command = fields.fields[0];
+
+    if (strcmp(command, "GET_INFO") == 0) {
         serial_link_send_info(&s_cfg);
         return;
     }
 
-    if (strcmp(line, "GET_STATUS") == 0) {
+    if (strcmp(command, "GET_STATUS") == 0) {
         publish_status();
         if (s_have_snapshot) {
             serial_link_send_snapshot(&s_last_snapshot);
@@ -51,25 +121,18 @@ static void handle_command(const char *line) {
         return;
     }
 
-    if (strcmp(line, "REPUBLISH_DISCOVERY") == 0) {
+    if (strcmp(command, "REPUBLISH_DISCOVERY") == 0) {
         app_mqtt_publish_discovery(&s_cfg);
         serial_link_send_ok();
         return;
     }
 
-    if (strncmp(line, "SET_WIFI,", 9) == 0) {
-        char copy[SERIAL_LINE_MAX];
-        strncpy(copy, line, sizeof(copy) - 1);
-        copy[sizeof(copy) - 1] = '\0';
-
-        char *saveptr = NULL;
-        strtok_r(copy, ",", &saveptr); // SET_WIFI
-        char *ssid = strtok_r(NULL, ",", &saveptr);
-        char *pass = strtok_r(NULL, ",", &saveptr);
-        if (!ssid || !pass) {
-            serial_link_send_error("bad_set_wifi");
+    if (strcmp(command, "SET_WIFI") == 0) {
+        if (!require_field_count(&fields, 3, "bad_set_wifi")) {
             return;
         }
+        const char *ssid = fields.fields[1];
+        const char *pass = fields.fields[2];
 
         memset(s_cfg.wifi_ssid, 0, sizeof(s_cfg.wifi_ssid));
         memset(s_cfg.wifi_password, 0, sizeof(s_cfg.wifi_password));
@@ -83,7 +146,7 @@ static void handle_command(const char *line) {
         return;
     }
 
-    if (strcmp(line, "CLEAR_WIFI") == 0) {
+    if (strcmp(command, "CLEAR_WIFI") == 0) {
         memset(s_cfg.wifi_ssid, 0, sizeof(s_cfg.wifi_ssid));
         memset(s_cfg.wifi_password, 0, sizeof(s_cfg.wifi_password));
         s_cfg.wifi_configured = false;
@@ -93,23 +156,15 @@ static void handle_command(const char *line) {
         return;
     }
 
-    if (strncmp(line, "SET_MQTT,", 9) == 0) {
-        char copy[SERIAL_LINE_MAX];
-        strncpy(copy, line, sizeof(copy) - 1);
-        copy[sizeof(copy) - 1] = '\0';
-
-        char *saveptr = NULL;
-        strtok_r(copy, ",", &saveptr); // SET_MQTT
-        char *host   = strtok_r(NULL, ",", &saveptr);
-        char *port   = strtok_r(NULL, ",", &saveptr);
-        char *user   = strtok_r(NULL, ",", &saveptr);
-        char *pass   = strtok_r(NULL, ",", &saveptr);
-        char *prefix = strtok_r(NULL, ",", &saveptr);
-
-        if (!host || !port) {
-            serial_link_send_error("bad_set_mqtt");
+    if (strcmp(command, "SET_MQTT") == 0) {
+        if (!require_field_count(&fields, 3, "bad_set_mqtt")) {
             return;
         }
+        const char *host = fields.fields[1];
+        const char *port = fields.fields[2];
+        const char *user = fields.count > 3 ? fields.fields[3] : NULL;
+        const char *pass = fields.count > 4 ? fields.fields[4] : NULL;
+        const char *prefix = fields.count > 5 ? fields.fields[5] : NULL;
 
         memset(s_cfg.mqtt_host, 0, sizeof(s_cfg.mqtt_host));
         memset(s_cfg.mqtt_user, 0, sizeof(s_cfg.mqtt_user));
@@ -129,7 +184,7 @@ static void handle_command(const char *line) {
         return;
     }
 
-    if (strcmp(line, "MQTT_ENABLE") == 0) {
+    if (strcmp(command, "MQTT_ENABLE") == 0) {
         s_cfg.mqtt_enabled = true;
         config_store_save(&s_cfg);
         if (wifi_manager_is_connected()) {
@@ -139,7 +194,7 @@ static void handle_command(const char *line) {
         return;
     }
 
-    if (strcmp(line, "MQTT_DISABLE") == 0) {
+    if (strcmp(command, "MQTT_DISABLE") == 0) {
         s_cfg.mqtt_enabled = false;
         config_store_save(&s_cfg);
         app_mqtt_stop();
@@ -147,26 +202,26 @@ static void handle_command(const char *line) {
         return;
     }
 
-    if (strcmp(line, "START_PROVISIONING") == 0) {
+    if (strcmp(command, "START_PROVISIONING") == 0) {
         provisioning_stub_start();
         serial_link_send_ok();
         return;
     }
 
-    if (strcmp(line, "STOP_PROVISIONING") == 0) {
+    if (strcmp(command, "STOP_PROVISIONING") == 0) {
         provisioning_stub_stop();
         serial_link_send_ok();
         return;
     }
 
-    if (strcmp(line, "REBOOT") == 0) {
+    if (strcmp(command, "REBOOT") == 0) {
         serial_link_send_ok();
         vTaskDelay(pdMS_TO_TICKS(200));
         esp_restart();
         return;
     }
 
-    if (strcmp(line, "FACTORY_RESET") == 0) {
+    if (strcmp(command, "FACTORY_RESET") == 0) {
         config_store_factory_reset();
         config_store_fill_defaults(&s_cfg);
         app_mqtt_stop();

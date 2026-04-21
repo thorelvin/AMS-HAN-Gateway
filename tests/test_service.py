@@ -16,6 +16,14 @@ class _ConnectedSerial:
     connected = True
 
 
+class _CaptureConnectionService:
+    def __init__(self, sent: list[str]) -> None:
+        self._sent = sent
+
+    def send(self, command: str) -> None:
+        self._sent.append(command)
+
+
 class _FixedPriceProvider:
     def quote_for_hour(self, area, dt):
         return PriceQuote(nok_per_kwh=0.875, source_name="Test price feed", source_note=f"{area} fixed test price")
@@ -47,7 +55,7 @@ class GatewayServiceTest(unittest.TestCase):
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
             svc.serial = _ConnectedSerial()
-            svc.selected_port = "COM4 â€” USB Bridge"
+            svc.selected_port = "COM4 - USB Bridge"
             svc.connection_status = "Connected to COM4"
 
             with patch.object(svc, "_probe_port") as probe_mock, patch.object(svc, "connect") as connect_mock:
@@ -129,6 +137,32 @@ class GatewayServiceTest(unittest.TestCase):
 
             self.assertIn("estimated spot", summary["spot_now_text"])
             self.assertIn("fallback estimate", summary["warning_text"].lower())
+
+    def test_set_heatmap_threshold_uses_service_boundary_and_clamps(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
+
+            stored = svc.set_heatmap_switch_threshold(50)
+
+            self.assertEqual(stored, 100)
+            self.assertEqual(svc.settings["heatmap_switch_threshold"], 100)
+
+    def test_wifi_and_mqtt_commands_use_escaped_protocol(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
+            sent: list[str] = []
+            svc.serial = _ConnectedSerial()
+            svc.connection_service = _CaptureConnectionService(sent)
+
+            svc.set_wifi_config("My,SSID", r"pa\ss,word")
+            svc.set_mqtt_config("broker,internal", 1883, "u,ser", r"se\cret", "ams,han")
+
+            self.assertEqual(sent[0], r"SET_WIFI,My\,SSID,pa\\ss\,word")
+            self.assertEqual(sent[1], r"SET_MQTT,broker\,internal,1883,u\,ser,se\\cret,ams\,han")
 
     def test_fixture_workflow_builds_history_cost_and_heatmap_views(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(

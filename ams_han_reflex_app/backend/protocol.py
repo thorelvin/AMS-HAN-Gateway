@@ -26,8 +26,46 @@ GATEWAY_PROTOCOL_PREFIXES = (
 )
 
 
+def escape_command_field(value: object) -> str:
+    text = str(value)
+    return (
+        text.replace("\\", "\\\\")
+        .replace(",", "\\,")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+
+
+def split_escaped_fields(text: str) -> list[str]:
+    fields: list[str] = []
+    buf: list[str] = []
+    escaping = False
+    for ch in text:
+        if escaping:
+            if ch == "n":
+                buf.append("\n")
+            elif ch == "r":
+                buf.append("\r")
+            else:
+                buf.append(ch)
+            escaping = False
+            continue
+        if ch == "\\":
+            escaping = True
+            continue
+        if ch == ",":
+            fields.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    if escaping:
+        buf.append("\\")
+    fields.append("".join(buf))
+    return fields
+
+
 def build_command(*parts: object) -> str:
-    return ",".join(str(part) for part in parts if part is not None)
+    return ",".join(escape_command_field(part) for part in parts if part is not None)
 
 
 def mask_sensitive_command(command: str) -> str:
@@ -35,7 +73,7 @@ def mask_sensitive_command(command: str) -> str:
     if not raw:
         return raw
 
-    parts = raw.split(",")
+    parts = split_escaped_fields(raw)
     if not parts:
         return raw
 
@@ -46,7 +84,7 @@ def mask_sensitive_command(command: str) -> str:
     for idx in indexes:
         if idx < len(parts):
             parts[idx] = "***"
-    return ",".join(parts)
+    return build_command(*parts)
 
 
 def is_gateway_protocol_line(line: str) -> bool:
@@ -58,9 +96,9 @@ def list_supported_commands() -> Iterable[str]:
     return [
         "GET_INFO",
         "GET_STATUS",
-        "SET_WIFI,<ssid>,<password>",
+        "SET_WIFI,<ssid>,<password>  # commas and backslashes are escaped automatically",
         "CLEAR_WIFI",
-        "SET_MQTT,<host>,<port>,<user>,<password>,<topic_prefix>",
+        "SET_MQTT,<host>,<port>,<user>,<password>,<topic_prefix>  # commas and backslashes are escaped automatically",
         "MQTT_ENABLE",
         "MQTT_DISABLE",
         "REPUBLISH_DISCOVERY",
@@ -77,7 +115,7 @@ def parse_line(line: str) -> ParsedLine:
         return ParsedLine(raw=raw, kind="empty")
 
     if raw.startswith("RSP:INFO,"):
-        parts = raw.split(",", 3)
+        parts = split_escaped_fields(raw)
         if len(parts) == 4:
             return ParsedLine(
                 raw=raw,
@@ -91,7 +129,7 @@ def parse_line(line: str) -> ParsedLine:
         return ParsedLine(raw=raw, kind="parse_error", error="Invalid RSP:INFO")
 
     if raw.startswith("RSP:WIFI,"):
-        parts = raw.split(",", 2)
+        parts = split_escaped_fields(raw)
         if len(parts) >= 2:
             state = parts[1]
             ip = parts[2] if len(parts) > 2 else ""
@@ -99,7 +137,7 @@ def parse_line(line: str) -> ParsedLine:
         return ParsedLine(raw=raw, kind="parse_error", error="Invalid RSP:WIFI")
 
     if raw.startswith("RSP:MQTT,"):
-        parts = raw.split(",", 1)
+        parts = split_escaped_fields(raw)
         if len(parts) == 2:
             return ParsedLine(raw=raw, kind="mqtt_status", payload=MqttStatus(state=parts[1]))
         return ParsedLine(raw=raw, kind="parse_error", error="Invalid RSP:MQTT")
@@ -108,10 +146,11 @@ def parse_line(line: str) -> ParsedLine:
         return ParsedLine(raw=raw, kind="ok")
 
     if raw.startswith("RSP:ERROR,"):
-        return ParsedLine(raw=raw, kind="error", error=raw.split(",", 1)[1])
+        parts = split_escaped_fields(raw)
+        return ParsedLine(raw=raw, kind="error", error=parts[1] if len(parts) > 1 else "unknown")
 
     if raw.startswith("STATUS,"):
-        parts = raw.split(",", 3)
+        parts = split_escaped_fields(raw)
         if len(parts) >= 3:
             category = parts[1]
             state = parts[2]
@@ -120,7 +159,7 @@ def parse_line(line: str) -> ParsedLine:
         return ParsedLine(raw=raw, kind="parse_error", error="Invalid STATUS line")
 
     if raw.startswith("FRAME,"):
-        parts = raw.split(",", 3)
+        parts = split_escaped_fields(raw)
         if len(parts) == 4:
             try:
                 payload = FrameEvent(
@@ -134,7 +173,7 @@ def parse_line(line: str) -> ParsedLine:
         return ParsedLine(raw=raw, kind="parse_error", error="Invalid FRAME line")
 
     if raw.startswith("SNAP,"):
-        parts = raw.split(",")
+        parts = split_escaped_fields(raw)
         if len(parts) >= 21:
             try:
                 payload = SnapshotEvent(
