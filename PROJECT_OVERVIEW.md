@@ -48,10 +48,10 @@ This gives the Reflex app a concrete protocol target rather than a generic exter
 The domain layer is responsible for turning raw measurements into operator-facing context:
 
 - `domain/frame_parser.py` enriches long-frame details
-- `domain/analysis.py` builds summaries, history rows, top hours, and daily views
-- `domain/event_engine.py` detects power, phase, voltage, and data-quality events
+- `domain/analysis.py` builds summaries, history rows, top hours, heatmaps, and daily views
+- `domain/event_engine.py` detects power, phase, voltage, and data-quality events with mains-aware attribution
 - `domain/pricing.py` applies Norwegian price-area context, grid rates, and capacity estimates
-- `domain/signatures.py` groups recurring event patterns into signature rows
+- `domain/signatures.py` groups recurring event patterns into signature rows with duty-cycle metrics
 
 ### 4. Reflex UI
 
@@ -61,9 +61,10 @@ The domain layer is responsible for turning raw measurements into operator-facin
 - analysis panels for phase and voltage behavior
 - diagnostics and filtered event tracking
 - daily graph and hourly bucket views
+- heatmap views with threshold-based switch counting
 - cost and capacity views
 - history and database tools
-- advanced controls for serial, replay, Wi-Fi, and MQTT workflows
+- advanced controls for serial, replay, Wi-Fi, MQTT, and electrical-model workflows
 
 ## Core capabilities
 
@@ -86,7 +87,10 @@ The domain layer is responsible for turning raw measurements into operator-facin
 
 - top hourly import buckets
 - phase dominance and imbalance summaries
+- `TN` and `IT` mains-model selection so phase and conductor attribution matches the installation
 - daily hourly bucket generation
+- recent-day and weekday heatmaps with switch-activity intensity cues
+- signature duty-cycle summaries including runtime, starts per day, common start hour, and weekday-versus-weekend frequency
 - hourly and daily cost breakdown
 - `NO1` to `NO5` spot-price context
 - configurable day and night grid rates
@@ -132,7 +136,11 @@ Recent work has improved the repository with:
 - stable Reflex compile behavior
 - corrected reactive rendering in hourly cost rows
 - functioning light and dark mode switching
+- stable live serial refresh without requiring manual page reloads
 - bundled replay fixtures for multiple event scenarios
+- mains-aware `TN` and `IT` interpretation across events, signatures, and heatmaps
+- signature duty-cycle analytics for recurring loads
+- heatmap switch-threshold filtering and clearer switching-intensity visualization
 - refreshed documentation aligned with both the bundled ESP-IDF gateway source and the standard used in the related PC-side repository
 
 ## Near-term improvement areas

@@ -13,9 +13,9 @@ It is intended as a practical engineering project for understanding household im
 - Live overview of import, export, signed grid flow, current hour, and projected hour
 - Device and link status for gateway identity, firmware, Wi-Fi, MQTT, and last frame activity
 - Diagnostics for missing voltage channels, voltage sag, phase spread, power steps, and load sessions
-- Phase and voltage analysis with imbalance, dominant-phase, and worst-spread summaries
-- Load Signatures that group recurring power changes into likely household-device patterns with representative watt size
-- Heatmap analysis with time-weighted hourly buckets, weekday pattern view, and thresholded phase-switch counts
+- Phase and voltage analysis with user-selectable `TN` or `IT` mains interpretation, imbalance focus, and worst-spread summaries
+- Load Signatures that group recurring power changes into likely household-device patterns with representative watt size and duty-cycle hints
+- Heatmap analysis with time-weighted hourly buckets, weekday pattern view, thresholded phase-switch counts, and switching-activity gradient
 - Local snapshot history with daily buckets, top-hour tracking, heatmaps, and event-signature summaries
 - Cost analysis with Norwegian price areas `NO1` to `NO5`, configurable grid rates, and capacity estimation
 - Replay and demo workflow for offline development, debugging, and scenario validation
@@ -82,6 +82,16 @@ Phase and voltage analysis together with load signatures and top-hour buckets:
 
 ![Analysis tab](docs/images/dashboard-analysis.png)
 
+### Electrical model selection
+
+The dashboard includes an `Electrical Model` selector in the advanced setup area so the analysis matches the installation type.
+
+- **TN mode** treats most common 230 V appliance changes as `L1`, `L2`, or `L3` relative to neutral.
+- **IT mode** treats many 230 V appliance changes as conductor-pair activity such as `L1-L2`, `L1-L3`, or `L2-L3`.
+- The selected model affects event classification, Load Signatures, heatmap switch counts, and wording in the phase-analysis summaries.
+
+This matters because a Norwegian IT installation can otherwise make ordinary appliance steps look misleading if they are interpreted with a neutral-based TN model.
+
 ### Load Signatures explained
 
 The `Load Signatures` table is where the dashboard starts turning repeated power changes into practical operator hints instead of just raw meter values.
@@ -145,6 +155,8 @@ How to read each heatmap cell:
 - `3P n` is the count of **balanced 3-phase switch events** in that hour.
 - The **blue/green background** shows whether the hour was import-heavy or export-heavy overall.
 - The **corner accent** is hidden for quiet hours, then steps from **yellow** to **orange** to **red** as switching activity increases.
+
+If the dashboard is set to `IT` mode, the switch counters are assigned to `L1-L2`, `L1-L3`, and `L2-L3` instead of neutral-referenced `L1/L2/L3`.
 
 The `Load switch threshold` dropdown controls which signed power changes are counted as switches. The default is `300 W`, but the user can raise or lower the threshold from `100 W` to `1500 W` depending on whether the goal is to catch small appliance changes or only larger load steps.
 
@@ -419,7 +431,7 @@ Replay mode feeds the same analysis, diagnostics, daily, cost, and history views
 
 ## Bundled replay scenarios
 
-The repository includes ready-made replay logs in [fixtures/README.md](C:\Users\thore\Documents\Codex\2026-04-20-files-mentioned-by-the-user-ams\AMS-HAN-Gateway\fixtures\README.md):
+The repository includes ready-made replay logs in [fixtures/README.md](fixtures/README.md):
 
 - `demo_session.log`: baseline demo session
 - `replay_phase_loss_l2.log`: L2 voltage disappears briefly and then recovers
@@ -441,8 +453,10 @@ Current analysis and diagnostics include:
 - baseline-driven load-session start and end events
 - power-step detection against recent samples
 - recurring load-signature grouping with phase tagging, event counts, representative watt size, and confidence
+- signature duty-cycle summaries including average runtime, starts per day, common start hour, and weekday-versus-weekend frequency
 - time-weighted hourly heatmaps for recent-day and weekday-pattern analysis
-- thresholded phase-switch counts for `L1`, `L2`, `L3`, and `3-phase` activity inside each heatmap hour
+- thresholded phase-switch counts for `L1`, `L2`, `L3`, and `3-phase` activity inside each heatmap hour, or `L1-L2`, `L1-L3`, `L2-L3`, and `3-phase` in `IT` mode
+- user-selectable `TN` and `IT` mains interpretation so event and switch attribution fits the installation type
 - likely device hints for large single-phase and three-phase changes
 - cost rows built from elapsed time between snapshots rather than raw sample counts
 - capacity estimate based on top hourly import averages on different days
@@ -491,7 +505,8 @@ The repository currently provides:
 - a working Reflex dashboard for live and replayed gateway data
 - bundled scenario logs for diagnostics and replay development
 - integrated pricing, capacity, diagnostics, history, and heatmap views
-- thresholded phase-switch heatmaps and Load Signatures for pattern-oriented analysis
+- thresholded phase-switch heatmaps, Load Signatures, and duty-cycle summaries for pattern-oriented analysis
+- user-selectable `TN` and `IT` mains interpretation across events, signatures, and heatmaps
 - theme switching, advanced tools, and improved hourly-cost rendering
 - lighter refresh behavior so heavier tabs do not churn in the background unnecessarily
 
