@@ -175,3 +175,68 @@ class CostSummaryData:
             "capacity_warning_text": self.capacity_warning_text,
             "rows": [row.as_dict() for row in self.rows],
         }
+
+
+@dataclass(slots=True)
+class GatewaySettings:
+    last_port: str = ""
+    baudrate: int = 115200
+    auto_connect: bool = True
+    show_advanced: bool = False
+    db_path: str = ""
+    price_area: str = "NO3"
+    grid_day_rate: float = 0.4254
+    grid_night_rate: float = 0.2642
+    event_filter: str = "all"
+    replay_path: str = ""
+    replay_lines_per_tick: int = 4
+    heatmap_switch_threshold: int = 300
+    mains_network_type: str = "TN"
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, object] | None = None) -> "GatewaySettings":
+        merged = dict(raw or {})
+        def as_int(name: str, default: int) -> int:
+            try:
+                return int(merged.get(name, default) or default)
+            except (TypeError, ValueError):
+                return default
+
+        def as_float(name: str, default: float) -> float:
+            try:
+                return float(merged.get(name, default) or default)
+            except (TypeError, ValueError):
+                return default
+
+        return cls(
+            last_port=str(merged.get("last_port", "")),
+            baudrate=as_int("baudrate", 115200),
+            auto_connect=bool(merged.get("auto_connect", True)),
+            show_advanced=bool(merged.get("show_advanced", False)),
+            db_path=str(merged.get("db_path", "")),
+            price_area=str(merged.get("price_area", "NO3")),
+            grid_day_rate=as_float("grid_day_rate", 0.4254),
+            grid_night_rate=as_float("grid_night_rate", 0.2642),
+            event_filter=str(merged.get("event_filter", "all")),
+            replay_path=str(merged.get("replay_path", "")),
+            replay_lines_per_tick=as_int("replay_lines_per_tick", 4),
+            heatmap_switch_threshold=as_int("heatmap_switch_threshold", 300),
+            mains_network_type=str(merged.get("mains_network_type", "TN")),
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "last_port": self.last_port,
+            "baudrate": self.baudrate,
+            "auto_connect": self.auto_connect,
+            "show_advanced": self.show_advanced,
+            "db_path": self.db_path,
+            "price_area": self.price_area,
+            "grid_day_rate": self.grid_day_rate,
+            "grid_night_rate": self.grid_night_rate,
+            "event_filter": self.event_filter,
+            "replay_path": self.replay_path,
+            "replay_lines_per_tick": self.replay_lines_per_tick,
+            "heatmap_switch_threshold": self.heatmap_switch_threshold,
+            "mains_network_type": self.mains_network_type,
+        }

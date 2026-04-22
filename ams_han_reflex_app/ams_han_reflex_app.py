@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import reflex as rx
 
+from .app_context import configure_default_app_context
 from .app_meta import APP_AUTHOR, APP_NAME, APP_VERSION
 from .components import dual_bar_card, hero_card, hint_banner, kv, panel, stat_card, tiny_metric
 from .domain.pricing import PRICE_AREAS
+
+configure_default_app_context()
+
 from .state import DashboardState
 
 UPLOAD_ID = "replay_upload"
@@ -347,39 +351,39 @@ def phase_analysis_panel() -> rx.Component:
 
 def top_hour_row(row: dict[str, str]) -> rx.Component:
     return rx.table.row(
-        rx.table.cell(row["hour"]),
-        rx.table.cell(row["avg_import"]),
-        rx.table.cell(row["avg_export"]),
-        rx.table.cell(row["avg_signed"]),
+        rx.table.cell(row.hour),
+        rx.table.cell(row.avg_import),
+        rx.table.cell(row.avg_export),
+        rx.table.cell(row.avg_signed),
     )
 
 
 def event_row(row: dict[str, str]) -> rx.Component:
     return rx.table.row(
-        rx.table.cell(row["time"]),
-        rx.table.cell(row["category"]),
-        rx.table.cell(row["type"]),
-        rx.table.cell(row["status"]),
-        rx.table.cell(row["severity"]),
-        rx.table.cell(row["confidence"]),
-        rx.table.cell(row["delta_signed"]),
-        rx.table.cell(row["phase"]),
-        rx.table.cell(row["note"]),
+        rx.table.cell(row.time),
+        rx.table.cell(row.category),
+        rx.table.cell(row.type),
+        rx.table.cell(row.status),
+        rx.table.cell(row.severity),
+        rx.table.cell(row.confidence),
+        rx.table.cell(row.delta_signed),
+        rx.table.cell(row.phase),
+        rx.table.cell(row.note),
     )
 
 
 def signature_row(row: dict[str, str]) -> rx.Component:
     return rx.table.row(
-        rx.table.cell(row["signature"]),
-        rx.table.cell(row["phase"]),
-        rx.table.cell(row["typical_w"]),
-        rx.table.cell(row["events"]),
-        rx.table.cell(row["avg_runtime"]),
-        rx.table.cell(row["starts_per_day"]),
-        rx.table.cell(row["common_start_hour"]),
-        rx.table.cell(row["weekday_weekend"]),
-        rx.table.cell(row["last_seen"]),
-        rx.table.cell(row["confidence"]),
+        rx.table.cell(row.signature),
+        rx.table.cell(row.phase),
+        rx.table.cell(row.typical_w),
+        rx.table.cell(row.events),
+        rx.table.cell(row.avg_runtime),
+        rx.table.cell(row.starts_per_day),
+        rx.table.cell(row.common_start_hour),
+        rx.table.cell(row.weekday_weekend),
+        rx.table.cell(row.last_seen),
+        rx.table.cell(row.confidence),
     )
 
 
@@ -640,9 +644,25 @@ def heatmap_hour_header(hour: str) -> rx.Component:
 def heatmap_cell(cell) -> rx.Component:
     return rx.box(
         rx.vstack(
-            rx.text(cell.primary, size="2", weight="bold", color=cell.text_color, line_height="1.1"),
-            rx.text(cell.secondary, size="1", color=cell.secondary_color, line_height="1.15"),
-            rx.text(cell.tertiary, size="1", color=cell.secondary_color, line_height="1.15"),
+            rx.text(
+                cell.primary,
+                size="2",
+                weight="bold",
+                color=rx.color_mode_cond(cell.light_text_color, cell.text_color),
+                line_height="1.1",
+            ),
+            rx.text(
+                cell.secondary,
+                size="1",
+                color=rx.color_mode_cond(cell.light_secondary_color, cell.secondary_color),
+                line_height="1.15",
+            ),
+            rx.text(
+                cell.tertiary,
+                size="1",
+                color=rx.color_mode_cond(cell.light_secondary_color, cell.secondary_color),
+                line_height="1.15",
+            ),
             spacing="1",
             align="start",
             width="100%",
@@ -652,10 +672,13 @@ def heatmap_cell(cell) -> rx.Component:
         min_height="82px",
         padding="0.55em",
         border_radius="14px",
-        bg=cell.bg,
-        border=cell.border,
+        bg=rx.color_mode_cond(cell.light_bg, cell.bg),
+        border=rx.color_mode_cond(cell.light_border, cell.border),
         title=cell.tooltip,
-        box_shadow="inset 0 1px 0 rgba(255,255,255,0.06)",
+        box_shadow=rx.color_mode_cond(
+            "inset 0 1px 0 rgba(255,255,255,0.88), 0 1px 3px rgba(15,23,42,0.08)",
+            "inset 0 1px 0 rgba(255,255,255,0.06)",
+        ),
     )
 
 
@@ -809,15 +832,15 @@ def heatmap_tab() -> rx.Component:
 
 def cost_row(row: dict[str, float | str]) -> rx.Component:
     return rx.table.row(
-        rx.table.cell(row["hour"]),
-        rx.table.cell(row["spot_nok_kwh"]),
-        rx.table.cell(row["grid_nok_kwh"]),
-        rx.table.cell(row["total_nok_kwh"]),
-        rx.table.cell(row["import_kw"]),
-        rx.table.cell(row["export_kw"]),
-        rx.table.cell(row["import_cost_nok"]),
-        rx.table.cell(row["export_value_nok"]),
-        rx.table.cell(row["net_cost_nok"]),
+        rx.table.cell(row.hour),
+        rx.table.cell(row.spot_nok_kwh),
+        rx.table.cell(row.grid_nok_kwh),
+        rx.table.cell(row.total_nok_kwh),
+        rx.table.cell(row.import_kw),
+        rx.table.cell(row.export_kw),
+        rx.table.cell(row.import_cost_nok),
+        rx.table.cell(row.export_value_nok),
+        rx.table.cell(row.net_cost_nok),
     )
 
 
@@ -909,19 +932,19 @@ def cost_tab() -> rx.Component:
 
 def history_row(row: dict[str, str]) -> rx.Component:
     return rx.table.row(
-        rx.table.cell(row["received_at"]),
-        rx.table.cell(row["meter_time"]),
-        rx.table.cell(row["meter"]),
-        rx.table.cell(row["import_w"]),
-        rx.table.cell(row["export_w"]),
-        rx.table.cell(row["signed_grid_w"]),
-        rx.table.cell(row["avg_v"]),
-        rx.table.cell(row["l1_a"]),
-        rx.table.cell(row["l2_a"]),
-        rx.table.cell(row["l3_a"]),
-        rx.table.cell(row["pf"]),
-        rx.table.cell(row["rx"]),
-        rx.table.cell(row["bad"]),
+        rx.table.cell(row.received_at),
+        rx.table.cell(row.meter_time),
+        rx.table.cell(row.meter),
+        rx.table.cell(row.import_w),
+        rx.table.cell(row.export_w),
+        rx.table.cell(row.signed_grid_w),
+        rx.table.cell(row.avg_v),
+        rx.table.cell(row.l1_a),
+        rx.table.cell(row.l2_a),
+        rx.table.cell(row.l3_a),
+        rx.table.cell(row.pf),
+        rx.table.cell(row.rx),
+        rx.table.cell(row.bad),
     )
 
 

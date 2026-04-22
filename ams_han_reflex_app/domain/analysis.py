@@ -24,9 +24,13 @@ class HeatmapCell:
     secondary: str
     tertiary: str
     bg: str
+    light_bg: str
     border: str
+    light_border: str
     text_color: str
+    light_text_color: str
     secondary_color: str
+    light_secondary_color: str
     duration_text: str
     tooltip: str
 
@@ -37,6 +41,98 @@ class HeatmapRow:
     peak_text: str
     change_text: str
     cells: list[HeatmapCell]
+
+
+@dataclass(slots=True)
+class HistoryTableRow:
+    received_at: str
+    meter_time: str
+    meter: str
+    import_w: str
+    export_w: str
+    signed_grid_w: str
+    avg_v: str
+    l1_a: str
+    l2_a: str
+    l3_a: str
+    pf: str
+    rx: str
+    bad: str
+
+
+@dataclass(slots=True)
+class AnalysisSummaryData:
+    signed_avg_text: str
+    current_hour_text: str
+    projected_hour_text: str
+    import_peak_text: str
+    export_peak_text: str
+    import_samples_text: str
+    export_samples_text: str
+
+
+@dataclass(slots=True)
+class PhaseAnalysisData:
+    phase_latest_text: str
+    phase_avg_text: str
+    phase_dominant_text: str
+    phase_imbalance_text: str
+    voltage_latest_text: str
+    voltage_avg_text: str
+    voltage_min_text: str
+    voltage_spread_text: str
+
+
+@dataclass(slots=True)
+class TopHourRow:
+    hour: str
+    avg_import: str
+    avg_export: str
+    avg_signed: str
+    avg_import_kw: float
+    avg_export_kw: float
+    signed_kw: float
+    day: str
+
+
+@dataclass(slots=True)
+class DailyGraphData:
+    rows: list[dict[str, float | str]]
+    date_text: str
+    hours_text: str
+    peak_text: str
+
+
+@dataclass(slots=True)
+class LabelValueRow:
+    label: str
+    value: str
+
+
+@dataclass(slots=True)
+class DiagnosticsEventRow:
+    time: str
+    type: str
+    status: str
+    severity: str
+    confidence: str
+    delta_signed: str
+    phase: str
+    voltages: str
+    phase_delta: str
+    note: str
+    summary: str
+    category: str
+
+
+@dataclass(slots=True)
+class HeatmapSummaryData:
+    recent_rows: list[HeatmapRow]
+    weekday_rows: list[HeatmapRow]
+    day_count_text: str
+    peak_hour_text: str
+    change_peak_text: str
+    weekday_focus_text: str
 
 
 def parse_meter_dt(ts: str) -> datetime | None:
@@ -77,34 +173,39 @@ def import_export_bar(snapshot, records_desc) -> dict[str, str]:
     }
 
 
-def history_rows(records_desc: list[Any]) -> list[dict[str, str]]:
+def history_rows(records_desc: list[Any]) -> list[HistoryTableRow]:
     rows=[]
     for r in records_desc:
         s=r.snapshot
-        rows.append({
-            'received_at': r.received_at,
-            'meter_time': s.timestamp,
-            'meter': f'{s.meter_id} ({s.meter_type})',
-            'import_w': f'{s.import_w:.1f}',
-            'export_w': f'{s.export_w:.1f}',
-            'signed_grid_w': f'{signed_grid_w(s):+.1f}',
-            'avg_v': f'{s.avg_voltage_v:.1f}',
-            'l1_a': f'{s.l1_a:.3f}',
-            'l2_a': f'{s.l2_a:.3f}',
-            'l3_a': f'{s.l3_a:.3f}',
-            'pf': f'{s.estimated_power_factor:.2f}',
-            'rx': str(s.frames_rx),
-            'bad': str(s.frames_bad),
-        })
+        rows.append(HistoryTableRow(
+            received_at=r.received_at,
+            meter_time=s.timestamp,
+            meter=f'{s.meter_id} ({s.meter_type})',
+            import_w=f'{s.import_w:.1f}',
+            export_w=f'{s.export_w:.1f}',
+            signed_grid_w=f'{signed_grid_w(s):+.1f}',
+            avg_v=f'{s.avg_voltage_v:.1f}',
+            l1_a=f'{s.l1_a:.3f}',
+            l2_a=f'{s.l2_a:.3f}',
+            l3_a=f'{s.l3_a:.3f}',
+            pf=f'{s.estimated_power_factor:.2f}',
+            rx=str(s.frames_rx),
+            bad=str(s.frames_bad),
+        ))
     return rows
 
 
-def analysis_summary(records_desc: list[Any]) -> dict[str, str]:
+def analysis_summary(records_desc: list[Any]) -> AnalysisSummaryData:
     if not records_desc:
-        return {
-            'signed_avg_text':'0.0 W signed avg', 'current_hour_text':'0.0 W current hour avg', 'projected_hour_text':'0.00 kWh projected hour',
-            'import_peak_text':'0.0 W peak import', 'export_peak_text':'0.0 W peak export', 'import_samples_text':'0 import samples', 'export_samples_text':'0 export samples'
-        }
+        return AnalysisSummaryData(
+            signed_avg_text='0.0 W signed avg',
+            current_hour_text='0.0 W current hour avg',
+            projected_hour_text='0.00 kWh projected hour',
+            import_peak_text='0.0 W peak import',
+            export_peak_text='0.0 W peak export',
+            import_samples_text='0 import samples',
+            export_samples_text='0 export samples',
+        )
     signed_vals=[signed_grid_w(r.snapshot) for r in records_desc]
     signed_avg = mean(signed_vals)
     latest_dt = parse_meter_dt(records_desc[0].snapshot.timestamp)
@@ -113,27 +214,36 @@ def analysis_summary(records_desc: list[Any]) -> dict[str, str]:
     projected_kwh = abs(current_hour_avg)/1000.0
     import_peak=max((r.snapshot.import_w for r in records_desc), default=0.0)
     export_peak=max((r.snapshot.export_w for r in records_desc), default=0.0)
-    return {
-        'signed_avg_text': f'{signed_avg:.1f} W signed avg',
-        'current_hour_text': f'{current_hour_avg:.1f} W current hour avg',
-        'projected_hour_text': f'{projected_kwh:.2f} kWh projected hour',
-        'import_peak_text': f'{import_peak:.1f} W peak import',
-        'export_peak_text': f'{export_peak:.1f} W peak export',
-        'import_samples_text': f"{sum(1 for r in records_desc if r.snapshot.import_w>0)} import samples",
-        'export_samples_text': f"{sum(1 for r in records_desc if r.snapshot.export_w>0)} export samples",
-    }
+    return AnalysisSummaryData(
+        signed_avg_text=f'{signed_avg:.1f} W signed avg',
+        current_hour_text=f'{current_hour_avg:.1f} W current hour avg',
+        projected_hour_text=f'{projected_kwh:.2f} kWh projected hour',
+        import_peak_text=f'{import_peak:.1f} W peak import',
+        export_peak_text=f'{export_peak:.1f} W peak export',
+        import_samples_text=f"{sum(1 for r in records_desc if r.snapshot.import_w>0)} import samples",
+        export_samples_text=f"{sum(1 for r in records_desc if r.snapshot.export_w>0)} export samples",
+    )
 
 
 def phase_analysis(
     samples: list[dict[str, Any]],
     records_desc: list[Any],
     mains_network_type: str = DEFAULT_MAINS_NETWORK_TYPE,
-) -> dict[str, str]:
+) -> PhaseAnalysisData:
     network_type = normalize_mains_network_type(mains_network_type)
     if not samples:
         # try derive from records
         if not records_desc:
-            return {k:'No phase data' for k in ['phase_latest_text','phase_avg_text','phase_dominant_text','phase_imbalance_text','voltage_latest_text','voltage_avg_text','voltage_min_text','voltage_spread_text']}
+            return PhaseAnalysisData(
+                phase_latest_text='No phase data',
+                phase_avg_text='No phase data',
+                phase_dominant_text='No phase data',
+                phase_imbalance_text='No phase data',
+                voltage_latest_text='No phase data',
+                voltage_avg_text='No phase data',
+                voltage_min_text='No phase data',
+                voltage_spread_text='No phase data',
+            )
         samples=[]
         for r in records_desc[:200]:
             s=r.snapshot
@@ -157,19 +267,19 @@ def phase_analysis(
         latest_volt='No voltage frame yet'; voltage_avg='No voltage averages yet'; voltage_min='No voltage minimums yet'; spread='0.0 V worst phase spread'
     dominant_text = 'Dominant conductor recently' if network_type == 'IT' else 'Dominant phase recently'
     imbalance_text = 'recent max conductor imbalance' if network_type == 'IT' else 'recent max imbalance'
-    return {
-        'phase_latest_text': f'L1 {l1a:.3f} A | L2 {l2a:.3f} A | L3 {l3a:.3f} A',
-        'phase_avg_text': f'Avg L1 {avg_l1:.3f} A | Avg L2 {avg_l2:.3f} A | Avg L3 {avg_l3:.3f} A',
-        'phase_dominant_text': f'{dominant_text}: {dominant}',
-        'phase_imbalance_text': f'{imbalance:.3f} A {imbalance_text}',
-        'voltage_latest_text': latest_volt,
-        'voltage_avg_text': voltage_avg,
-        'voltage_min_text': voltage_min,
-        'voltage_spread_text': spread,
-    }
+    return PhaseAnalysisData(
+        phase_latest_text=f'L1 {l1a:.3f} A | L2 {l2a:.3f} A | L3 {l3a:.3f} A',
+        phase_avg_text=f'Avg L1 {avg_l1:.3f} A | Avg L2 {avg_l2:.3f} A | Avg L3 {avg_l3:.3f} A',
+        phase_dominant_text=f'{dominant_text}: {dominant}',
+        phase_imbalance_text=f'{imbalance:.3f} A {imbalance_text}',
+        voltage_latest_text=latest_volt,
+        voltage_avg_text=voltage_avg,
+        voltage_min_text=voltage_min,
+        voltage_spread_text=spread,
+    )
 
 
-def top_hour_rows(records_desc: list[Any], top_n: int = 8) -> list[dict[str, str]]:
+def top_hour_rows(records_desc: list[Any], top_n: int = 8) -> list[TopHourRow]:
     buckets=defaultdict(list)
     for r in records_desc:
         dt=parse_meter_dt(r.snapshot.timestamp)
@@ -180,12 +290,21 @@ def top_hour_rows(records_desc: list[Any], top_n: int = 8) -> list[dict[str, str
         avg_import=mean([s.import_w for s in snaps])
         avg_export=mean([s.export_w for s in snaps])
         signed=avg_export-avg_import
-        rows.append({'hour':hour,'avg_import':f'{avg_import:.1f}','avg_export':f'{avg_export:.1f}','avg_signed':f'{signed:+.1f}','avg_import_kw':avg_import/1000.0,'avg_export_kw':avg_export/1000.0,'signed_kw':signed/1000.0,'day':hour[:10]})
-    rows.sort(key=lambda r: abs(float(r['avg_signed'])), reverse=True)
+        rows.append(TopHourRow(
+            hour=hour,
+            avg_import=f'{avg_import:.1f}',
+            avg_export=f'{avg_export:.1f}',
+            avg_signed=f'{signed:+.1f}',
+            avg_import_kw=avg_import/1000.0,
+            avg_export_kw=avg_export/1000.0,
+            signed_kw=signed/1000.0,
+            day=hour[:10],
+        ))
+    rows.sort(key=lambda row: abs(float(row.avg_signed)), reverse=True)
     return rows[:top_n]
 
 
-def daily_graph_data(records_desc: list[Any]) -> dict[str, Any]:
+def daily_graph_data(records_desc: list[Any]) -> DailyGraphData:
     buckets={h:{'import':[],'export':[]} for h in range(24)}
     latest_date=None
     for r in records_desc:
@@ -193,7 +312,7 @@ def daily_graph_data(records_desc: list[Any]) -> dict[str, Any]:
         if dt:
             latest_date=max(latest_date, dt.date()) if latest_date else dt.date()
     if not latest_date:
-        return {'rows':[],'date_text':'No daily data','hours_text':'0 populated hours','peak_text':'No daily peak yet'}
+        return DailyGraphData(rows=[], date_text='No daily data', hours_text='0 populated hours', peak_text='No daily peak yet')
     for r in records_desc:
         dt=parse_meter_dt(r.snapshot.timestamp)
         if dt and dt.date()==latest_date:
@@ -208,8 +327,8 @@ def daily_graph_data(records_desc: list[Any]) -> dict[str, Any]:
         if ik or ek: count+=1
         peak=max(peak, ik, ek)
         rows.append({'hour':f'{h:02d}','import_kw':round(ik,3),'export_kw':round(ek,3),'signed_kw':round(sk,3)})
-    peak_text = f"Peak export {peak:.2f} kW" if any(r['export_kw']>=r['import_kw'] for r in rows) else f"Peak import {peak:.2f} kW"
-    return {'rows':rows,'date_text':str(latest_date),'hours_text':f'{count} populated hours','peak_text':peak_text}
+    peak_text = f"Peak export {peak:.2f} kW" if any(row['export_kw']>=row['import_kw'] for row in rows) else f"Peak import {peak:.2f} kW"
+    return DailyGraphData(rows=rows, date_text=str(latest_date), hours_text=f'{count} populated hours', peak_text=peak_text)
 
 
 def _sample_power(snapshot) -> dict[str, float]:
@@ -311,24 +430,31 @@ def _format_cell_text(
     return primary, secondary, tertiary
 
 
-def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple[str, str, str, str]:
+def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple[str, str, str, str, str, str, str, str]:
     load_norm = max(0.0, min(load_norm, 1.0))
     change_norm = max(0.0, min(change_norm, 1.0))
-    base_alpha = 0.22 + (0.54 * load_norm)
+    dark_base_alpha = 0.22 + (0.54 * load_norm)
+    light_base_alpha = 0.18 + (0.38 * load_norm)
     if signed_kw > 0.12:
         base_rgb = (22, 163, 74)
     elif signed_kw < -0.12:
         base_rgb = (37, 99, 235)
     else:
         base_rgb = (100, 116, 139)
-    base_bg = (
-        f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {base_alpha:.3f}) 0%, "
-        f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(base_alpha * 0.92, 0.20):.3f}) 100%)"
+    dark_base_bg = (
+        f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {dark_base_alpha:.3f}) 0%, "
+        f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(dark_base_alpha * 0.92, 0.20):.3f}) 100%)"
+    )
+    light_base_bg = (
+        f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {light_base_alpha:.3f}) 0%, "
+        f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(light_base_alpha * 0.94, 0.16):.3f}) 100%)"
     )
     if change_norm < 0.16:
-        bg = base_bg
+        bg = dark_base_bg
+        light_bg = light_base_bg
         border_rgb = (148, 163, 184)
         border_alpha = 0.24 + (0.24 * load_norm)
+        light_border_alpha = 0.26 + (0.28 * load_norm)
     else:
         if change_norm < 0.45:
             corner_rgb = (250, 204, 21)
@@ -343,16 +469,27 @@ def _cell_style(load_norm: float, change_norm: float, signed_kw: float) -> tuple
             corner_alpha = 0.92
             border_rgb = (239, 68, 68)
         bg = (
-            f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {base_alpha:.3f}) 0%, "
-            f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(base_alpha * 0.92, 0.20):.3f}) 74%, "
+            f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {dark_base_alpha:.3f}) 0%, "
+            f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(dark_base_alpha * 0.92, 0.20):.3f}) 74%, "
             f"rgba({corner_rgb[0]}, {corner_rgb[1]}, {corner_rgb[2]}, {corner_alpha * 0.22:.3f}) 84%, "
             f"rgba({corner_rgb[0]}, {corner_rgb[1]}, {corner_rgb[2]}, {corner_alpha:.3f}) 100%)"
         )
+        light_bg = (
+            f"linear-gradient(135deg, rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {light_base_alpha:.3f}) 0%, "
+            f"rgba({base_rgb[0]}, {base_rgb[1]}, {base_rgb[2]}, {max(light_base_alpha * 0.94, 0.16):.3f}) 70%, "
+            f"rgba({corner_rgb[0]}, {corner_rgb[1]}, {corner_rgb[2]}, {max(corner_alpha * 0.22, 0.22):.3f}) 82%, "
+            f"rgba({corner_rgb[0]}, {corner_rgb[1]}, {corner_rgb[2]}, {max(corner_alpha * 0.68, 0.58):.3f}) 94%, "
+            f"rgba({corner_rgb[0]}, {corner_rgb[1]}, {corner_rgb[2]}, {min(corner_alpha, 0.96):.3f}) 100%)"
+        )
         border_alpha = 0.30 + (0.30 * max(load_norm, change_norm))
+        light_border_alpha = 0.38 + (0.28 * max(load_norm, change_norm))
     border = f"1px solid rgba({border_rgb[0]}, {border_rgb[1]}, {border_rgb[2]}, {border_alpha:.3f})"
+    light_border = f"1px solid rgba({border_rgb[0]}, {border_rgb[1]}, {border_rgb[2]}, {light_border_alpha:.3f})"
     text_color = '#f8fafc'
+    light_text_color = '#0f172a'
     secondary_color = '#cbd5e1'
-    return bg, border, text_color, secondary_color
+    light_secondary_color = '#334155'
+    return bg, light_bg, border, light_border, text_color, light_text_color, secondary_color, light_secondary_color
 
 
 def build_load_heatmaps(
@@ -360,19 +497,19 @@ def build_load_heatmaps(
     recent_days: int = 7,
     switch_threshold_w: float = 300.0,
     mains_network_type: str = DEFAULT_MAINS_NETWORK_TYPE,
-) -> dict[str, Any]:
+) -> HeatmapSummaryData:
     network_type = normalize_mains_network_type(mains_network_type)
     slot_labels_text = switch_slot_text(network_type)
     hourly_buckets: dict[tuple[str, int], dict[str, float]] = defaultdict(_empty_heat_bucket)
     if not records_desc:
-        return {
-            'recent_rows': [],
-            'weekday_rows': [],
-            'day_count_text': '0 days',
-            'peak_hour_text': 'No hourly load peak yet',
-            'change_peak_text': 'No load-change spikes yet',
-            'weekday_focus_text': 'No weekday pattern yet',
-        }
+        return HeatmapSummaryData(
+            recent_rows=[],
+            weekday_rows=[],
+            day_count_text='0 days',
+            peak_hour_text='No hourly load peak yet',
+            change_peak_text='No load-change spikes yet',
+            weekday_focus_text='No weekday pattern yet',
+        )
 
     records = list(reversed(records_desc))
     dated_records: list[tuple[datetime, Any]] = []
@@ -381,14 +518,14 @@ def build_load_heatmaps(
         if dt is not None:
             dated_records.append((dt, record))
     if len(dated_records) < 2:
-        return {
-            'recent_rows': [],
-            'weekday_rows': [],
-            'day_count_text': '1 day' if dated_records else '0 days',
-            'peak_hour_text': 'Need more history for heatmap',
-            'change_peak_text': 'Need more history for change heatmap',
-            'weekday_focus_text': 'Need more history for weekday pattern',
-        }
+        return HeatmapSummaryData(
+            recent_rows=[],
+            weekday_rows=[],
+            day_count_text='1 day' if dated_records else '0 days',
+            peak_hour_text='Need more history for heatmap',
+            change_peak_text='Need more history for change heatmap',
+            weekday_focus_text='Need more history for weekday pattern',
+        )
 
     for idx in range(len(dated_records) - 1):
         start_dt, start_record = dated_records[idx]
@@ -426,14 +563,14 @@ def build_load_heatmaps(
             _record_switch(hourly_buckets[end_key], phase_label, network_type)
 
     if not hourly_buckets:
-        return {
-            'recent_rows': [],
-            'weekday_rows': [],
-            'day_count_text': '0 days',
-            'peak_hour_text': 'No hourly load peak yet',
-            'change_peak_text': 'No load-change spikes yet',
-            'weekday_focus_text': 'No weekday pattern yet',
-        }
+        return HeatmapSummaryData(
+            recent_rows=[],
+            weekday_rows=[],
+            day_count_text='0 days',
+            peak_hour_text='No hourly load peak yet',
+            change_peak_text='No load-change spikes yet',
+            weekday_focus_text='No weekday pattern yet',
+        )
 
     unique_days = sorted({day for day, _hour in hourly_buckets.keys()})
     recent_day_labels = list(reversed(unique_days[-recent_days:]))
@@ -451,16 +588,20 @@ def build_load_heatmaps(
             primary, secondary, tertiary = _format_cell_text(stats, bucket['duration_h'], network_type)
             load_norm = stats['avg_abs_kw'] / max_abs_kw if max_abs_kw else 0.0
             change_norm = stats['switch_total'] / max_switch_total if max_switch_total else 0.0
-            bg, border, text_color, secondary_color = _cell_style(load_norm, change_norm, stats['avg_signed_kw'])
+            bg, light_bg, border, light_border, text_color, light_text_color, secondary_color, light_secondary_color = _cell_style(load_norm, change_norm, stats['avg_signed_kw'])
             cells.append(HeatmapCell(
                 hour=f'{hour:02d}',
                 primary=primary,
                 secondary=secondary,
                 tertiary=tertiary,
                 bg=bg,
+                light_bg=light_bg,
                 border=border,
+                light_border=light_border,
                 text_color=text_color,
+                light_text_color=light_text_color,
                 secondary_color=secondary_color,
+                light_secondary_color=light_secondary_color,
                 duration_text=f"{bucket['duration_h']:.2f} h",
                 tooltip=(
                     f"{label_text} {hour:02d}:00 | Net {stats['avg_signed_kw']:+.2f} kW | "
@@ -526,20 +667,20 @@ def build_load_heatmaps(
         default=('Mon', 0.0),
     )
 
-    return {
-        'recent_rows': recent_rows,
-        'weekday_rows': weekday_rows,
-        'day_count_text': f'{len(unique_days)} days in heatmap',
-        'peak_hour_text': (
+    return HeatmapSummaryData(
+        recent_rows=recent_rows,
+        weekday_rows=weekday_rows,
+        day_count_text=f'{len(unique_days)} days in heatmap',
+        peak_hour_text=(
             f"{peak_day_hour[0]} {peak_day_hour[1]:02d}:00 at {peak_day_hour[2]:.1f} kW"
             if peak_day_hour else 'No hourly load peak yet'
         ),
-        'change_peak_text': (
+        change_peak_text=(
             f"{change_day_hour[0]} {change_day_hour[1]:02d}:00 with {int(change_day_hour[2])} switches >= {switch_threshold_w:.0f} W"
             if change_day_hour else f'No switches >= {switch_threshold_w:.0f} W yet'
         ),
-        'weekday_focus_text': f'{weekday_focus[0]} is busiest on average ({weekday_focus[1]:.1f} kW)',
-    }
+        weekday_focus_text=f'{weekday_focus[0]} is busiest on average ({weekday_focus[1]:.1f} kW)',
+    )
 
 
 def what_changed(snapshot, events):

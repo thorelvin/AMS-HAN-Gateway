@@ -118,11 +118,11 @@ class GatewayServiceTest(unittest.TestCase):
                 if line:
                     svc._on_line(line)
 
-            self.assertGreater(svc.get_summary(100)["count"], 0)
+            self.assertGreater(svc.get_summary(100).count, 0)
 
             svc.clear_history()
 
-            self.assertEqual(svc.get_summary(100)["count"], 0)
+            self.assertEqual(svc.get_summary(100).count, 0)
 
     def test_cost_summary_surfaces_fallback_warning(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(
@@ -135,8 +135,8 @@ class GatewayServiceTest(unittest.TestCase):
 
             summary = svc.cost_summary()
 
-            self.assertIn("estimated spot", summary["spot_now_text"])
-            self.assertIn("fallback estimate", summary["warning_text"].lower())
+            self.assertIn("estimated spot", summary.spot_now_text)
+            self.assertIn("fallback estimate", summary.warning_text.lower())
 
     def test_set_heatmap_threshold_uses_service_boundary_and_clamps(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(
@@ -147,7 +147,7 @@ class GatewayServiceTest(unittest.TestCase):
             stored = svc.set_heatmap_switch_threshold(50)
 
             self.assertEqual(stored, 100)
-            self.assertEqual(svc.settings["heatmap_switch_threshold"], 100)
+            self.assertEqual(svc.settings.heatmap_switch_threshold, 100)
 
     def test_wifi_and_mqtt_commands_use_escaped_protocol(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(
@@ -185,10 +185,10 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(svc.wifi_status.state, "CONNECTED")
             self.assertEqual(svc.mqtt_status.state, "IDLE")
             self.assertIsNotNone(svc.device_info)
-            self.assertGreater(summary["count"], 0)
-            self.assertEqual(cost["warning_text"], "")
-            self.assertTrue(isinstance(cost["rows"], list))
-            self.assertTrue(heatmaps["recent_rows"])
+            self.assertGreater(summary.count, 0)
+            self.assertEqual(cost.warning_text, "")
+            self.assertTrue(isinstance(cost.rows, list))
+            self.assertTrue(heatmaps.recent_rows)
 
 
 if __name__ == "__main__":

@@ -60,16 +60,16 @@ class HeatmapAnalysisTest(unittest.TestCase):
 
         heatmaps = build_load_heatmaps(records_desc, recent_days=7, switch_threshold_w=300.0)
 
-        self.assertEqual(heatmaps["day_count_text"], "2 days in heatmap")
-        self.assertEqual(heatmaps["recent_rows"][0].label, "2026-04-21")
-        self.assertEqual(heatmaps["recent_rows"][1].label, "2026-04-20")
-        self.assertEqual(len(heatmaps["recent_rows"][0].cells), 24)
-        self.assertEqual(len(heatmaps["weekday_rows"]), 7)
-        self.assertEqual(heatmaps["recent_rows"][0].cells[9].secondary, "L 2/0/0")
-        self.assertEqual(heatmaps["recent_rows"][0].cells[9].tertiary, "3P 0")
-        self.assertEqual(heatmaps["recent_rows"][1].cells[9].secondary, "L 0/0/0")
-        self.assertEqual(heatmaps["recent_rows"][1].cells[9].tertiary, "3P 1")
-        self.assertIn("Threshold 300 W", heatmaps["recent_rows"][1].cells[9].tooltip)
+        self.assertEqual(heatmaps.day_count_text, "2 days in heatmap")
+        self.assertEqual(heatmaps.recent_rows[0].label, "2026-04-21")
+        self.assertEqual(heatmaps.recent_rows[1].label, "2026-04-20")
+        self.assertEqual(len(heatmaps.recent_rows[0].cells), 24)
+        self.assertEqual(len(heatmaps.weekday_rows), 7)
+        self.assertEqual(heatmaps.recent_rows[0].cells[9].secondary, "L 2/0/0")
+        self.assertEqual(heatmaps.recent_rows[0].cells[9].tertiary, "3P 0")
+        self.assertEqual(heatmaps.recent_rows[1].cells[9].secondary, "L 0/0/0")
+        self.assertEqual(heatmaps.recent_rows[1].cells[9].tertiary, "3P 1")
+        self.assertIn("Threshold 300 W", heatmaps.recent_rows[1].cells[9].tooltip)
 
     def test_build_load_heatmaps_uses_phase_pairs_in_it_mode(self):
         records_desc = [
@@ -81,8 +81,8 @@ class HeatmapAnalysisTest(unittest.TestCase):
 
         heatmaps = build_load_heatmaps(records_desc, recent_days=7, switch_threshold_w=300.0, mains_network_type="IT")
 
-        self.assertEqual(heatmaps["recent_rows"][0].cells[9].secondary, "IT 1/0/0")
-        self.assertIn("L1-L2/L1-L3/L2-L3 switches 1/0/0", heatmaps["recent_rows"][0].cells[9].tooltip)
+        self.assertEqual(heatmaps.recent_rows[0].cells[9].secondary, "IT 1/0/0")
+        self.assertIn("L1-L2/L1-L3/L2-L3 switches 1/0/0", heatmaps.recent_rows[0].cells[9].tooltip)
 
     def test_phase_analysis_uses_it_wording(self):
         phase = phase_analysis(
@@ -91,8 +91,8 @@ class HeatmapAnalysisTest(unittest.TestCase):
             mains_network_type="IT",
         )
 
-        self.assertIn("Dominant conductor recently", phase["phase_dominant_text"])
-        self.assertIn("conductor imbalance", phase["phase_imbalance_text"])
+        self.assertIn("Dominant conductor recently", phase.phase_dominant_text)
+        self.assertIn("conductor imbalance", phase.phase_imbalance_text)
 
 
 if __name__ == "__main__":

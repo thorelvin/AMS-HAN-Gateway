@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .backend.models import DeviceInfo, MqttStatus, ParsedLine, SnapshotEvent, StatusLine, WifiStatus
+from .backend.models import CostSummaryData, DeviceInfo, GatewaySettings, HistorySummary, MqttStatus, ParsedLine, SnapshotEvent, StatusLine, WifiStatus
 from .backend.protocol import build_command, mask_sensitive_command, parse_line
 from .backend.serial_worker import SerialManager
 from .backend.storage import SnapshotStore
@@ -19,17 +19,16 @@ from .domain.frame_parser import parse_kfm001_frame
 from .domain.mains import DEFAULT_MAINS_NETWORK_TYPE, classify_phase_delta, normalize_mains_network_type, parse_phase_delta_text
 from .domain.pricing import GRID_DAY_RATE_NOK_PER_KWH, GRID_NIGHT_RATE_NOK_PER_KWH, PRICE_AREAS, PriceProvider
 from .domain.signatures import build_signature_rows, likely_device_hint
-from .services import AnalysisService, ConnectionService, CostService, HistoryService, ReplayService
+from .services import AnalysisService, ConnectionService, CostService, HistoryService, ReplayService, SettingsService
 from .support.event_log_store import EventLogStore
 from .support.replay_player import ReplayPlayer
 from .support.settings_store import SettingsStore
 
-DEFAULT_SETTINGS: dict[str, Any] = {
-    'last_port':'', 'baudrate':115200, 'auto_connect':True, 'show_advanced':False, 'db_path':'',
-    'price_area':'NO3', 'grid_day_rate':GRID_DAY_RATE_NOK_PER_KWH, 'grid_night_rate':GRID_NIGHT_RATE_NOK_PER_KWH,
-    'event_filter':'all', 'replay_path':'', 'replay_lines_per_tick':4, 'heatmap_switch_threshold':300,
-    'mains_network_type': DEFAULT_MAINS_NETWORK_TYPE,
-}
+DEFAULT_SETTINGS: dict[str, Any] = GatewaySettings(
+    grid_day_rate=GRID_DAY_RATE_NOK_PER_KWH,
+    grid_night_rate=GRID_NIGHT_RATE_NOK_PER_KWH,
+    mains_network_type=DEFAULT_MAINS_NETWORK_TYPE,
+).as_dict()
 
 class GatewayService:
     def __init__(
@@ -44,17 +43,17 @@ class GatewayService:
         replay_player: ReplayPlayer | None = None,
     ) -> None:
         self._lock = threading.RLock()
-        self.settings_store = settings_store or SettingsStore(default_settings_path(), DEFAULT_SETTINGS)
-        self.settings = self.settings_store.load()
-        self.event_log_store = event_log_store or EventLogStore(self.settings_store.directory/'event_log.json')
-        self.db_path = Path(self.settings.get('db_path') or db_path)
+        self.settings_service = SettingsService(settings_store or SettingsStore(default_settings_path(), DEFAULT_SETTINGS))
+        self.settings = self.settings_service.settings
+        self.event_log_store = event_log_store or EventLogStore(self.settings_service.directory/'event_log.json')
+        self.db_path = Path(self.settings.db_path or db_path)
         self.history_service = HistoryService(self.db_path, snapshot_store=snapshot_store)
         self.store = self.history_service.store
         self.serial = serial_manager or SerialManager(on_line=self._on_line, on_state=self._on_state)
         self.connection_service = ConnectionService(self.serial)
-        self.mains_network_type = normalize_mains_network_type(self.settings.get('mains_network_type', DEFAULT_MAINS_NETWORK_TYPE))
+        self.mains_network_type = normalize_mains_network_type(self.settings.mains_network_type)
         self.connection_status='Searching for gateway'
-        self.selected_port=str(self.settings.get('last_port',''))
+        self.selected_port=str(self.settings.last_port)
         self.device_info: DeviceInfo | None = None
         self.wifi_status = WifiStatus(state='DISCONNECTED', ip='')
         self.mqtt_status = MqttStatus(state='IDLE')
@@ -100,8 +99,8 @@ class GatewayService:
         self._settings_epoch +=1; self._cache.clear()
 
     def _save_settings(self):
-        self.settings['db_path']=str(self.db_path)
-        self.settings_store.save(self.settings)
+        self.settings.db_path = str(self.db_path)
+        self.settings_service.save()
         self._invalidate_settings_cache()
 
     def _save_event_log(self, force: bool=False):
@@ -169,7 +168,7 @@ class GatewayService:
         if normalized == self.mains_network_type:
             return
         self.mains_network_type = normalized
-        self.settings['mains_network_type'] = normalized
+        self.settings.mains_network_type = normalized
         self._save_settings()
         self.event_engine = EventEngineV2(mains_network_type=normalized)
         self._reclassify_event_log_for_mains()
@@ -179,37 +178,37 @@ class GatewayService:
 
     def set_heatmap_switch_threshold(self, threshold: int) -> int:
         cleaned = max(100, min(1500, int(threshold)))
-        self.settings['heatmap_switch_threshold'] = cleaned
+        self.settings.heatmap_switch_threshold = cleaned
         self._save_settings()
         return cleaned
 
     def set_show_advanced(self, show_advanced: bool) -> bool:
-        self.settings['show_advanced'] = bool(show_advanced)
+        self.settings.show_advanced = bool(show_advanced)
         self._save_settings()
-        return bool(self.settings['show_advanced'])
+        return bool(self.settings.show_advanced)
 
     def set_baudrate(self, baudrate: int) -> int:
         cleaned = max(1200, int(baudrate))
-        self.settings['baudrate'] = cleaned
+        self.settings.baudrate = cleaned
         self._save_settings()
         return cleaned
 
     def set_replay_path(self, replay_path: str) -> str:
-        self.settings['replay_path'] = str(replay_path)
+        self.settings.replay_path = str(replay_path)
         self._save_settings()
-        return str(self.settings['replay_path'])
+        return str(self.settings.replay_path)
 
     def list_ports(self) -> list[str]:
         return self.connection_service.list_port_labels()
 
     def preferred_port_label(self) -> str:
-        target = self.selected_port or self.settings.get('last_port','')
+        target = self.selected_port or self.settings.last_port
         if not target:
             return ''
         return self.connection_service.preferred_port_label(target)
 
     def _ordered_candidates(self):
-        preferred = str(self.settings.get('last_port', ''))
+        preferred = str(self.settings.last_port)
         return self.connection_service.ordered_candidates(preferred)
 
     def _probe_port(self, port: str, baudrate: int) -> bool:
@@ -219,7 +218,7 @@ class GatewayService:
         if self.replay_service.summary().loaded:
             return 'Replay loaded. Stop replay before hardware auto-connect.'
         if self.serial.connected:
-            current_port = self._port_from_label(self.selected_port) if self.selected_port else self.settings.get('last_port', '')
+            current_port = self._port_from_label(self.selected_port) if self.selected_port else self.settings.last_port
             self.connection_status = f'Connected to {current_port}' if current_port else 'Connected'
             return self.connection_status
         for option in self._ordered_candidates():
@@ -245,8 +244,8 @@ class GatewayService:
         result = self.connection_service.connect(port_label, baudrate)
         self.connection_status = f'Connected to {result.option.port}'
         self.selected_port = result.option.label
-        self.settings['last_port'] = result.option.port
-        self.settings['baudrate'] = result.baudrate
+        self.settings.last_port = result.option.port
+        self.settings.baudrate = result.baudrate
         self._save_settings()
         self._invalidate_data_cache()
         self.request_info()
@@ -460,7 +459,7 @@ class GatewayService:
         summary = self.replay_service.summary()
         if not summary.loaded:
             return 0
-        line_budget = max_lines or int(self.settings.get('replay_lines_per_tick', 4) or 4)
+        line_budget = max_lines or int(self.settings.replay_lines_per_tick or 4)
         emitted = 0
         for raw in self.replay_service.advance(line_budget):
             self._on_line(raw)
@@ -504,17 +503,8 @@ class GatewayService:
     def get_history_rows(self, limit: int = 200):
         return self.analysis_service.history_rows(self._history_records_desc(limit))
 
-    def get_summary(self, limit: int = 500):
-        summary = self.history_service.summary(limit)
-        return {
-            'count': summary.count,
-            'avg_import_w': summary.avg_import_w,
-            'avg_net_w': summary.avg_net_w,
-            'max_import_w': summary.max_import_w,
-            'min_net_w': summary.min_net_w,
-            'max_net_w': summary.max_net_w,
-            'latest_received_at': summary.latest_received_at,
-        }
+    def get_summary(self, limit: int = 500) -> HistorySummary:
+        return self.history_service.summary(limit)
 
     def analysis_summary(self, limit: int = 1000):
         return self.analysis_service.analysis_summary(self._history_records_desc(limit))
@@ -595,22 +585,22 @@ class GatewayService:
 
     # Cost integration
     def save_cost_settings(self, *, price_area: str, grid_day_rate: float, grid_night_rate: float):
-        self.settings['price_area'] = price_area
-        self.settings['grid_day_rate'] = grid_day_rate
-        self.settings['grid_night_rate'] = grid_night_rate
+        self.settings.price_area = price_area
+        self.settings.grid_day_rate = grid_day_rate
+        self.settings.grid_night_rate = grid_night_rate
         self._save_settings()
 
-    def cost_summary(self, limit: int = 8000):
-        area = str(self.settings.get('price_area', 'NO3'))
-        day = float(self.settings.get('grid_day_rate', GRID_DAY_RATE_NOK_PER_KWH))
-        night = float(self.settings.get('grid_night_rate', GRID_NIGHT_RATE_NOK_PER_KWH))
+    def cost_summary(self, limit: int = 8000) -> CostSummaryData:
+        area = str(self.settings.price_area)
+        day = float(self.settings.grid_day_rate)
+        night = float(self.settings.grid_night_rate)
         return self.cost_service.build_summary(
             latest_snapshot=self.latest_snapshot,
             area=area,
             day_rate=day,
             night_rate=night,
             limit=limit,
-        ).as_dict()
+        )
 
     def clear_history(self):
         with self._lock:
@@ -624,7 +614,7 @@ class GatewayService:
         self.db_path = Path(path)
         self.history_service.set_db_path(self.db_path)
         self.store = self.history_service.store
-        self.settings['db_path'] = str(self.db_path)
+        self.settings.db_path = str(self.db_path)
         self._save_settings()
         self._invalidate_data_cache()
 

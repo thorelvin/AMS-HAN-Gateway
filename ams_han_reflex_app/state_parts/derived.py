@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import reflex as rx
 
-from .common import _service
-
 
 class DashboardDerivedState:
     @rx.var(cache=False)
@@ -36,11 +34,10 @@ class DashboardDerivedState:
 
     @rx.var(cache=False)
     def onboarding_message(self) -> str:
-        replay = _service().replay_summary()
-        if replay.get("loaded"):
+        if self.replay_loaded:
             return (
-                f"Replay mode active: {replay.get('source_name')} | "
-                f"{replay.get('status_text')} | {replay.get('progress_text')}"
+                f"Replay mode active: {self.replay_source_text} | "
+                f"{self.replay_status_text} | {self.replay_progress_text}"
             )
         if self.stale_snapshot:
             return "Disconnected from gateway. Showing last cached snapshot while auto-reconnect runs in the background."

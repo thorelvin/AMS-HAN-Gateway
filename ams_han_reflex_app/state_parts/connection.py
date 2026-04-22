@@ -6,7 +6,7 @@ from .common import _service
 class DashboardConnectionState:
     ports: list[str] = []
     selected_port: str = ""
-    baudrate: str = str(_service().settings.get("baudrate", 115200))
+    baudrate: str = "115200"
     connection_status: str = "Searching for gateway"
 
     wifi_ssid: str = ""
@@ -49,9 +49,12 @@ class DashboardConnectionState:
     bar_scale_text: str = "No recent peak yet"
 
     logs: list[str] = []
-    show_advanced: bool = bool(_service().settings.get("show_advanced", False))
+    show_advanced: bool = False
     auto_connect_message: str = "Searching for gateway..."
     stale_snapshot: bool = False
+    replay_loaded: bool = False
+    replay_active: bool = False
+    replay_paused: bool = False
     _slow_counter: int = 0
 
     def on_load(self):
@@ -82,21 +85,30 @@ class DashboardConnectionState:
             self.refresh_tab_data()
 
     def sync_from_service(self, force_heavy: bool = False):
-        self.connection_status = _service().connection_status
-        self.mains_network_type = _service().mains_network_type
-        preferred = _service().preferred_port_label()
+        service = _service()
+        self.connection_status = service.connection_status
+        self.mains_network_type = service.mains_network_type
+        self.show_advanced = bool(service.settings.show_advanced)
+        self.baudrate = str(service.settings.baudrate)
+        self.replay_path = str(service.settings.replay_path)
+        self.db_path = str(service.db_path)
+        self.price_area = str(service.settings.price_area)
+        self.grid_day_rate = str(service.settings.grid_day_rate)
+        self.grid_night_rate = str(service.settings.grid_night_rate)
+        self.heatmap_switch_threshold = str(service.settings.heatmap_switch_threshold)
+        preferred = service.preferred_port_label()
         if preferred:
             self.selected_port = preferred
-        if _service().device_info is not None:
-            self.device_id = _service().device_info.device_id
-            self.firmware = _service().device_info.fw_version
-            self.mac = _service().device_info.mac
-        self.wifi_state = _service().wifi_status.state
-        self.wifi_ip = _service().wifi_status.ip
-        self.mqtt_state = _service().mqtt_status.state
-        self.last_frame = f"seq={_service().last_frame_seq}, len={_service().last_frame_len}"
+        if service.device_info is not None:
+            self.device_id = service.device_info.device_id
+            self.firmware = service.device_info.fw_version
+            self.mac = service.device_info.mac
+        self.wifi_state = service.wifi_status.state
+        self.wifi_ip = service.wifi_status.ip
+        self.mqtt_state = service.mqtt_status.state
+        self.last_frame = f"seq={service.last_frame_seq}, len={service.last_frame_len}"
 
-        snap = _service().snapshot_dict()
+        snap = service.snapshot_dict()
         self.snapshot_meter = snap["meter"]
         self.snapshot_meter_time = snap["meter_time"]
         self.snapshot_power = snap["power"]
@@ -108,13 +120,13 @@ class DashboardConnectionState:
         self.snapshot_counters = snap["counters"]
         self.snapshot_stats = snap["stats"]
 
-        overview = _service().unified_overview()
+        overview = service.unified_overview()
         self.overview_title = overview["title"]
         self.overview_value = overview["value"]
         self.overview_subtitle = overview["subtitle"]
         self.overview_accent = overview["accent"]
 
-        bars = _service().import_export_bar()
+        bars = service.import_export_bar()
         self.import_bar_width = bars["import_width"]
         self.export_bar_width = bars["export_width"]
         self.import_bar_text = bars["import_text"]
@@ -122,15 +134,18 @@ class DashboardConnectionState:
         self.bar_scale_text = bars["scale_text"]
 
         self.stale_snapshot = (
-            _service().has_cached_snapshot()
-            and not _service().serial.connected
-            and not _service().replay_summary().get("loaded")
+            service.has_cached_snapshot()
+            and not service.serial.connected
+            and not service.replay_summary().get("loaded")
         )
-        replay = _service().replay_summary()
+        replay = service.replay_summary()
+        self.replay_loaded = bool(replay["loaded"])
+        self.replay_active = bool(replay["active"])
+        self.replay_paused = bool(replay["paused"])
         self.replay_status_text = str(replay["status_text"])
         self.replay_progress_text = str(replay["progress_text"])
         self.replay_source_text = str(replay["source_name"] or "-")
-        self.logs = _service().logs_list()
+        self.logs = service.logs_list()
         if force_heavy:
             self.refresh_live_metrics()
             self.refresh_tab_data()

@@ -39,10 +39,10 @@ class SignatureRowsTest(unittest.TestCase):
         rows = build_signature_rows(events)
 
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["signature"], "Likely heater / water heater / kitchen load")
-        self.assertEqual(rows[0]["phase"], "L1")
-        self.assertEqual(rows[0]["typical_w"], "3400 W")
-        self.assertEqual(rows[0]["events"], "2")
+        self.assertEqual(rows[0].signature, "Likely heater / water heater / kitchen load")
+        self.assertEqual(rows[0].phase, "L1")
+        self.assertEqual(rows[0].typical_w, "3400 W")
+        self.assertEqual(rows[0].events, "2")
 
     def test_build_signature_rows_adds_duty_cycle_metrics(self):
         signature = "Likely heater / water heater / kitchen load"
@@ -100,13 +100,13 @@ class SignatureRowsTest(unittest.TestCase):
         )
 
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["signature"], signature)
-        self.assertEqual(rows[0]["events"], "3")
-        self.assertEqual(rows[0]["avg_runtime"], "1h 8m")
-        self.assertEqual(rows[0]["starts_per_day"], "0.8/d")
-        self.assertEqual(rows[0]["common_start_hour"], "06:00")
-        self.assertEqual(rows[0]["weekday_weekend"], "WD 1.0/d | WE 0.5/d")
-        self.assertTrue(all("Session started" not in row["signature"] for row in rows))
+        self.assertEqual(rows[0].signature, signature)
+        self.assertEqual(rows[0].events, "3")
+        self.assertEqual(rows[0].avg_runtime, "1h 8m")
+        self.assertEqual(rows[0].starts_per_day, "0.8/d")
+        self.assertEqual(rows[0].common_start_hour, "06:00")
+        self.assertEqual(rows[0].weekday_weekend, "WD 1.0/d | WE 0.5/d")
+        self.assertTrue(all("Session started" not in row.signature for row in rows))
 
 
 if __name__ == "__main__":

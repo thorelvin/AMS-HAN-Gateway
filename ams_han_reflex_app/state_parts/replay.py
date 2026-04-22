@@ -6,7 +6,7 @@ from .common import _service
 
 
 class DashboardReplayState:
-    replay_path: str = str(_service().settings.get("replay_path", ""))
+    replay_path: str = ""
     replay_status_text: str = "Idle"
     replay_progress_text: str = "No replay loaded"
     replay_source_text: str = "-"

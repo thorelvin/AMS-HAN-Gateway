@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime
 import re
 from statistics import mean, median
@@ -11,6 +12,23 @@ from .mains import is_phase_pair_label, normalize_mains_network_type
 
 TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 SESSION_END_RE = re.compile(r'^Session started (?P<start>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \((?P<signature>.+)\)$')
+
+
+@dataclass(slots=True)
+class SignatureRowData:
+    signature: str
+    phase: str
+    typical_w: str
+    typical_w_value: str
+    events: str
+    avg_runtime: str
+    avg_runtime_value: str
+    starts_per_day: str
+    starts_per_day_value: str
+    common_start_hour: str
+    weekday_weekend: str
+    last_seen: str
+    confidence: str
 
 
 def likely_device_hint(
@@ -162,7 +180,7 @@ def build_signature_rows(
     events: list[dict[str, str]],
     limit: int = 10,
     observed_dates: Iterable[Any] | None = None,
-) -> list[dict[str, str]]:
+) -> list[SignatureRowData]:
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     session_starts: dict[str, list[dict[str, str]]] = defaultdict(list)
     power_steps: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -202,26 +220,26 @@ def build_signature_rows(
         average_runtime_seconds = mean(runtime_seconds[key]) if runtime_seconds[key] else None
         last_seen_item = max(items, key=lambda item: _parse_event_dt(item.get('time')) or datetime.min)
         effective_coverage_dates = coverage_dates or {dt.date() for dt in start_times}
-        rows.append({
-            'signature': note,
-            'phase': phase,
-            'typical_w': _format_signature_watt(deltas),
-            'typical_w_value': f'{typical_w_value:.3f}',
-            'events': str(len(primary_items)),
-            'avg_runtime': _format_runtime(average_runtime_seconds),
-            'avg_runtime_value': f'{average_runtime_seconds or 0.0:.3f}',
-            'starts_per_day': _format_rate(len(primary_items), len(effective_coverage_dates)),
-            'starts_per_day_value': f'{(len(primary_items) / len(effective_coverage_dates)) if effective_coverage_dates else 0.0:.6f}',
-            'common_start_hour': _most_common_start_hour(start_times),
-            'weekday_weekend': _weekday_weekend_text(start_times, effective_coverage_dates),
-            'last_seen': last_seen_item.get('time', '-'),
-            'confidence': last_seen_item.get('conf', last_seen_item.get('confidence', '0.50')),
-        })
+        rows.append(SignatureRowData(
+            signature=note,
+            phase=phase,
+            typical_w=_format_signature_watt(deltas),
+            typical_w_value=f'{typical_w_value:.3f}',
+            events=str(len(primary_items)),
+            avg_runtime=_format_runtime(average_runtime_seconds),
+            avg_runtime_value=f'{average_runtime_seconds or 0.0:.3f}',
+            starts_per_day=_format_rate(len(primary_items), len(effective_coverage_dates)),
+            starts_per_day_value=f'{(len(primary_items) / len(effective_coverage_dates)) if effective_coverage_dates else 0.0:.6f}',
+            common_start_hour=_most_common_start_hour(start_times),
+            weekday_weekend=_weekday_weekend_text(start_times, effective_coverage_dates),
+            last_seen=str(last_seen_item.get('time', '-')),
+            confidence=str(last_seen_item.get('conf', last_seen_item.get('confidence', '0.50'))),
+        ))
     rows.sort(
-        key=lambda r: (
-            int(r['events']),
-            float(r['starts_per_day_value']),
-            float(r['typical_w_value']),
+        key=lambda row: (
+            int(row.events),
+            float(row.starts_per_day_value),
+            float(row.typical_w_value),
         ),
         reverse=True,
     )

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from ..domain.analysis import HeatmapRow
+from ..backend.models import CostRow
+from ..domain.analysis import DiagnosticsEventRow, HeatmapRow, HistoryTableRow, TopHourRow
+from ..domain.signatures import SignatureRowData
 from .common import _service
 
 
 class DashboardAnalysisState:
-    price_area: str = str(_service().settings.get("price_area", "NO3"))
-    grid_day_rate: str = str(_service().settings.get("grid_day_rate", 0.4254))
-    grid_night_rate: str = str(_service().settings.get("grid_night_rate", 0.2642))
+    price_area: str = "NO3"
+    grid_day_rate: str = "0.4254"
+    grid_night_rate: str = "0.2642"
     cost_source_text: str = "-"
     spot_now_text: str = "-"
     grid_now_text: str = "-"
@@ -23,14 +25,14 @@ class DashboardAnalysisState:
     capacity_price_text: str = "-"
     capacity_basis_text: str = "-"
     capacity_warning_text: str = "-"
-    cost_rows: list[dict[str, float | str]] = []
+    cost_rows: list[CostRow] = []
 
     history_limit: str = "200"
-    db_path: str = str(_service().db_path)
-    history_rows: list[dict[str, str]] = []
-    top_hour_rows: list[dict[str, str]] = []
-    event_rows: list[dict[str, str]] = []
-    signature_rows: list[dict[str, str]] = []
+    db_path: str = ""
+    history_rows: list[HistoryTableRow] = []
+    top_hour_rows: list[TopHourRow] = []
+    event_rows: list[DiagnosticsEventRow] = []
+    signature_rows: list[SignatureRowData] = []
     diagnostics_issues: list[str] = []
     health_rows: list[dict[str, str]] = []
     daily_graph_rows: list[dict[str, float | str]] = []
@@ -66,9 +68,9 @@ class DashboardAnalysisState:
     voltage_avg_text: str = "No voltage averages yet"
     voltage_min_text: str = "No voltage minimums yet"
     voltage_spread_text: str = "0.0 V worst phase spread"
-    heatmap_switch_threshold: str = str(_service().settings.get("heatmap_switch_threshold", 300))
-    mains_network_type: str = str(_service().settings.get("mains_network_type", "TN"))
-    event_filter: str = str(_service().settings.get("event_filter", "all"))
+    heatmap_switch_threshold: str = "300"
+    mains_network_type: str = "TN"
+    event_filter: str = "all"
 
     def set_price_area(self, value: str):
         self.price_area = value
@@ -109,14 +111,14 @@ class DashboardAnalysisState:
     def refresh_history_summary(self):
         limit = int(self.history_limit or "200") if (self.history_limit or "200").isdigit() else 200
         summary = _service().get_summary(max(limit, 1))
-        self.db_count = summary["count"]
-        self.avg_import_text = f"{summary['avg_import_w']:.1f} W avg import"
-        self.avg_net_text = f"{summary['avg_net_w']:.1f} W avg net"
+        self.db_count = summary.count
+        self.avg_import_text = f"{summary.avg_import_w:.1f} W avg import"
+        self.avg_net_text = f"{summary.avg_net_w:.1f} W avg net"
         self.peak_text = (
-            f"{summary['max_import_w']:.1f} W max import | "
-            f"{summary['min_net_w']:.1f}/{summary['max_net_w']:.1f} W net"
+            f"{summary.max_import_w:.1f} W max import | "
+            f"{summary.min_net_w:.1f}/{summary.max_net_w:.1f} W net"
         )
-        self.latest_history_text = summary["latest_received_at"]
+        self.latest_history_text = summary.latest_received_at
 
     def refresh_history(self):
         limit = int(self.history_limit or "200") if (self.history_limit or "200").isdigit() else 200
@@ -127,42 +129,42 @@ class DashboardAnalysisState:
         limit = int(self.history_limit or "200") if (self.history_limit or "200").isdigit() else 200
         self.refresh_history_summary()
         summary = _service().analysis_summary(max(limit, 1) * 5)
-        self.signed_avg_text = summary["signed_avg_text"]
-        self.current_hour_text = summary["current_hour_text"]
-        self.projected_hour_text = summary["projected_hour_text"]
-        self.import_peak_text = summary["import_peak_text"]
-        self.export_peak_text = summary["export_peak_text"]
-        self.import_samples_text = summary["import_samples_text"]
-        self.export_samples_text = summary["export_samples_text"]
+        self.signed_avg_text = summary.signed_avg_text
+        self.current_hour_text = summary.current_hour_text
+        self.projected_hour_text = summary.projected_hour_text
+        self.import_peak_text = summary.import_peak_text
+        self.export_peak_text = summary.export_peak_text
+        self.import_samples_text = summary.import_samples_text
+        self.export_samples_text = summary.export_samples_text
 
     def refresh_analysis(self):
         limit = int(self.history_limit or "200") if (self.history_limit or "200").isdigit() else 200
         self.refresh_live_metrics()
         phase = _service().phase_analysis(max(limit, 1))
-        self.phase_latest_text = phase["phase_latest_text"]
-        self.phase_avg_text = phase["phase_avg_text"]
-        self.phase_dominant_text = phase["phase_dominant_text"]
-        self.phase_imbalance_text = phase["phase_imbalance_text"]
-        self.voltage_latest_text = phase["voltage_latest_text"]
-        self.voltage_avg_text = phase["voltage_avg_text"]
-        self.voltage_min_text = phase["voltage_min_text"]
-        self.voltage_spread_text = phase["voltage_spread_text"]
+        self.phase_latest_text = phase.phase_latest_text
+        self.phase_avg_text = phase.phase_avg_text
+        self.phase_dominant_text = phase.phase_dominant_text
+        self.phase_imbalance_text = phase.phase_imbalance_text
+        self.voltage_latest_text = phase.voltage_latest_text
+        self.voltage_avg_text = phase.voltage_avg_text
+        self.voltage_min_text = phase.voltage_min_text
+        self.voltage_spread_text = phase.voltage_spread_text
         self.top_hour_rows = _service().top_hour_rows(max(limit, 1) * 10, top_n=8)
 
         daily = _service().daily_graph_data(max(limit, 1) * 20)
-        self.daily_graph_rows = daily["rows"]
-        self.daily_date_text = daily["date_text"]
-        self.daily_hours_text = daily["hours_text"]
-        self.daily_peak_text = daily["peak_text"]
+        self.daily_graph_rows = daily.rows
+        self.daily_date_text = daily.date_text
+        self.daily_hours_text = daily.hours_text
+        self.daily_peak_text = daily.peak_text
 
         threshold = int(self.heatmap_switch_threshold or "300") if (self.heatmap_switch_threshold or "300").isdigit() else 300
         heatmaps = _service().load_heatmaps(max(limit, 1) * 20, switch_threshold_w=threshold)
-        self.heatmap_recent_rows = heatmaps["recent_rows"]
-        self.heatmap_weekday_rows = heatmaps["weekday_rows"]
-        self.heatmap_days_text = heatmaps["day_count_text"]
-        self.heatmap_peak_text = heatmaps["peak_hour_text"]
-        self.heatmap_change_text = heatmaps["change_peak_text"]
-        self.heatmap_weekday_text = heatmaps["weekday_focus_text"]
+        self.heatmap_recent_rows = heatmaps.recent_rows
+        self.heatmap_weekday_rows = heatmaps.weekday_rows
+        self.heatmap_days_text = heatmaps.day_count_text
+        self.heatmap_peak_text = heatmaps.peak_hour_text
+        self.heatmap_change_text = heatmaps.change_peak_text
+        self.heatmap_weekday_text = heatmaps.weekday_focus_text
         self.signature_rows = _service().signature_rows(12, coverage_limit=max(limit, 1) * 20)
 
     def refresh_diagnostics(self):
@@ -173,22 +175,22 @@ class DashboardAnalysisState:
 
     def refresh_cost(self):
         cost = _service().cost_summary(12000)
-        self.cost_source_text = cost["source_text"]
-        self.spot_now_text = cost["spot_now_text"]
-        self.grid_now_text = cost["grid_now_text"]
-        self.total_now_text = cost["total_now_text"]
-        self.cost_warning_text = cost.get("warning_text", "")
-        self.import_cost_now_text = cost["import_cost_now_text"]
-        self.export_value_now_text = cost["export_value_now_text"]
-        self.daily_import_cost_text = cost["daily_import_cost_text"]
-        self.daily_export_value_text = cost["daily_export_value_text"]
-        self.daily_net_cost_text = cost["daily_net_cost_text"]
-        self.current_hour_cost_text = cost["current_hour_cost_text"]
-        self.capacity_step_text = cost["capacity_step_text"]
-        self.capacity_price_text = cost["capacity_price_text"]
-        self.capacity_basis_text = cost["capacity_basis_text"]
-        self.capacity_warning_text = cost["capacity_warning_text"]
-        self.cost_rows = cost["rows"]
+        self.cost_source_text = cost.source_text
+        self.spot_now_text = cost.spot_now_text
+        self.grid_now_text = cost.grid_now_text
+        self.total_now_text = cost.total_now_text
+        self.cost_warning_text = cost.warning_text
+        self.import_cost_now_text = cost.import_cost_now_text
+        self.export_value_now_text = cost.export_value_now_text
+        self.daily_import_cost_text = cost.daily_import_cost_text
+        self.daily_export_value_text = cost.daily_export_value_text
+        self.daily_net_cost_text = cost.daily_net_cost_text
+        self.current_hour_cost_text = cost.current_hour_cost_text
+        self.capacity_step_text = cost.capacity_step_text
+        self.capacity_price_text = cost.capacity_price_text
+        self.capacity_basis_text = cost.capacity_basis_text
+        self.capacity_warning_text = cost.capacity_warning_text
+        self.cost_rows = cost.rows
 
     def refresh_tab_data(self):
         if self.current_tab == "history":

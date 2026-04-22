@@ -3,5 +3,6 @@ from .connection_service import ConnectionService
 from .cost_service import CostService
 from .history_service import HistoryService
 from .replay_service import ReplayService
+from .settings_service import SettingsService
 
-__all__ = ["AnalysisService", "ConnectionService", "CostService", "HistoryService", "ReplayService"]
+__all__ = ["AnalysisService", "ConnectionService", "CostService", "HistoryService", "ReplayService", "SettingsService"]
