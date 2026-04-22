@@ -92,21 +92,21 @@ Phase and voltage analysis together with load signatures and top-hour buckets:
 
 ![Analysis tab](docs/images/dashboard-analysis.png)
 
-### Electrical model selection
+### Mains network selection
 
-The dashboard includes an `Electrical Model` selector in the advanced setup area so the analysis matches the installation type.
+The dashboard includes a `Mains network type` selector in the `Electrical Setup` area so the analysis matches the installation type.
 
 ![Electrical model selector](docs/images/dashboard-electrical-model.png)
 
 - **TN mode** treats most common 230 V appliance changes as `L1`, `L2`, or `L3` relative to neutral.
 - **IT mode** treats many 230 V appliance changes as conductor-pair activity such as `L1-L2`, `L1-L3`, or `L2-L3`.
-- The selected model affects event classification, Load Signatures, heatmap switch counts, and wording in the phase-analysis summaries.
+- The selected model affects event classification, detected repeating loads, heatmap switch counts, and wording in the phase-analysis summaries.
 
 This matters because a Norwegian IT installation can otherwise make ordinary appliance steps look misleading if they are interpreted with a neutral-based TN model.
 
-### Load Signatures explained
+### Detected Repeating Loads explained
 
-The `Load Signatures` table is where the dashboard starts turning repeated power changes into practical operator hints instead of just raw meter values.
+The `Detected Repeating Loads` table, still built around the same Load Signatures concept, is where the dashboard starts turning repeated power changes into practical operator hints instead of just raw meter values.
 
 ![Load Signatures table](docs/images/dashboard-load-signatures.png)
 
@@ -115,7 +115,7 @@ Each row represents a recurring pattern seen in the event engine:
 - **Signature** is the dashboard's best current description of the load behavior, such as a likely heater step, a single-phase appliance step, or a smaller background change.
 - **Phase** shows whether the pattern is mostly tied to `L1`, `L2`, `L3`, or is not yet phase-specific.
 - **Typical W** gives the representative watt size of that signature, making it much easier to identify whether the change looks like a panel heater, water heater, kitchen appliance, EV-related load step, or a small background consumer.
-- **Events** shows how many times that pattern has been observed.
+- **Detections** shows how many times that pattern has been observed.
 - **Avg Runtime** shows the average session length for signatures that produce clear start and end events.
 - **Starts/Day** shows how often that signature begins across the observed history window.
 - **Common Start** highlights the hour where that signature most often begins.
@@ -249,14 +249,23 @@ The local Python application is responsible for:
 - building Load Signatures and hourly/weekly heatmap summaries from stored history
 - supporting replay-based development and troubleshooting
 
-The application side is now split more clearly across a small service layer:
+The application side is now split more clearly across a focused service and state architecture:
 
-- `service.py` acts as the thin runtime coordinator
+- `service.py` acts as the thin application coordinator and compatibility facade
+- `services/runtime_service.py` owns live runtime state, line handling, event logging, and dashboard sync shaping
+- `services/settings_service.py` owns persisted dashboard and gateway settings
 - `services/connection_service.py` owns port discovery, probing, and connection resolution
 - `services/replay_service.py` owns replay loading and playback state
 - `services/history_service.py` owns persisted and replay-backed snapshot history
 - `services/analysis_service.py` owns diagnostics, heatmaps, and signature shaping
 - `services/cost_service.py` owns hourly and daily pricing context
+
+The UI state is also no longer carried by one giant state class alone:
+
+- `state.py` composes the dashboard state from smaller `state_parts/` modules
+- `state_parts/connection.py` covers live link status, snapshot mirroring, and top-level controls
+- `state_parts/analysis.py`, `cost.py`, `diagnostics.py`, and `history.py` keep each tab's state and refresh behavior more focused
+- `state_parts/derived.py` centralizes user-facing explanatory text derived from the current state
 
 Architecture rules for those boundaries are documented in [docs/ARCHITECTURE_BOUNDARIES.md](docs/ARCHITECTURE_BOUNDARIES.md).
 
@@ -442,13 +451,14 @@ If you are working without live hardware, open the advanced tools and use a repl
 
 The default experience is built around a few main areas:
 
-- `Live`: current import/export view, snapshot details, and gateway status
-- `Analysis`: phase focus, imbalance, voltage behavior, top hourly buckets, and signature summaries
-- `Diagnostics`: issue summary, health panel, and filtered event tracker
-- `Daily`: daily hourly buckets and a graph-oriented overview of the latest meter day
-- `Heatmap`: recent-day and weekday-pattern heatmaps with thresholded `L1/L2/L3` and `3P` switch counts
-- `Cost`: spot-price context, grid-rate settings, hourly cost rows, and capacity estimate
+- `Live View`: current import/export view, energy rollups, snapshot details, and gateway status
+- `Power Patterns`: phase focus, imbalance, voltage behavior, busiest hours, and repeating-load summaries
+- `Warnings`: issue summary, health panel, and filtered event tracker
+- `Daily Use`: daily hourly buckets and a graph-oriented overview of the latest meter day
+- `Usage Map`: recent-day and weekday-pattern heatmaps with thresholded `L1/L2/L3` and `3P` switch counts, or conductor pairs in `IT` mode
+- `Costs`: spot-price context, grid-rate settings, hourly cost rows, and capacity estimate
 - `History`: stored snapshot table, averages, peaks, and local database summary
+- `Connection Log`: serial and application log output from the gateway workflow
 
 ### 4. Optional firmware workflow
 
@@ -462,7 +472,7 @@ If you want to work on the embedded side as well as the dashboard:
 
 Replay mode is useful for offline development, repeatable debugging, and demonstrating specific electrical scenarios.
 
-Open `Show Advanced` and then use the `Replay & Demo` panel to:
+Open `Show Advanced Tools` and then use the `Replay or Demo Data` panel to:
 
 - load a replay file from a full local path
 - load the bundled demo replay
@@ -506,7 +516,7 @@ Current analysis and diagnostics include:
 
 ## Testing
 
-Current automated coverage is still intentionally compact, but it now protects several of the highest-value seams in the repository:
+Automated coverage is still lighter than full live-hardware end-to-end testing, but it now protects several of the highest-value seams in the repository:
 
 ```bash
 python -m unittest
@@ -518,6 +528,7 @@ This currently checks:
 - protocol parsing accepts expected gateway line formats
 - command encoding escapes commas and backslashes correctly for `SET_WIFI` and `SET_MQTT`
 - serial auto-connect does not reconnect an already-open link
+- runtime-state handling keeps live parsing, replay playback, and dashboard sync behavior aligned
 - signature grouping produces representative watt values
 - heatmap analysis produces stable hourly and weekday outputs
 - a replay-driven service workflow can build stored history, heatmaps, and cost summaries from realistic gateway lines
