@@ -10,6 +10,7 @@ from ams_han_reflex_app.domain.pricing import (
     PRICE_REQUEST_HEADERS,
     PriceDayResult,
     PriceProvider,
+    estimate_capacity,
 )
 
 
@@ -23,6 +24,24 @@ class _BackgroundAwarePriceProvider(PriceProvider):
 
 
 class PricingTest(unittest.TestCase):
+    def test_estimate_capacity_returns_visual_step_data(self):
+        capacity = estimate_capacity(
+            [
+                {"day": "2026-04-01", "hour": "07", "avg_import_kw": 4.2},
+                {"day": "2026-04-02", "hour": "08", "avg_import_kw": 3.3},
+                {"day": "2026-04-03", "hour": "09", "avg_import_kw": 4.5},
+                {"day": "2026-04-03", "hour": "10", "avg_import_kw": 2.2},
+            ]
+        )
+
+        self.assertEqual(capacity.step_label, "2-5 kW")
+        self.assertEqual(capacity.step_price_text, "~270 NOK/month")
+        self.assertEqual(capacity.basis_kw_text, "4.00 kW basis")
+        active_step = next(step for step in capacity.steps if step.status == "active")
+        self.assertEqual(active_step.label, "2-5 kW")
+        self.assertEqual(active_step.fill_percent, "66.7%")
+        self.assertEqual(capacity.steps[-1].label, "0-2 kW")
+
     def test_quote_for_hour_returns_non_blocking_background_fallback_on_empty_cache(self):
         provider = _BackgroundAwarePriceProvider()
         target = datetime(2026, 4, 21, 10, 30)

@@ -36,39 +36,39 @@ class DashboardDerivedState:
     def onboarding_message(self) -> str:
         if self.replay_loaded:
             return (
-                f"Replay mode active: {self.replay_source_text} | "
-                f"{self.replay_status_text} | {self.replay_progress_text}"
+                f"Replay mode is active. Source: {self.replay_source_text} | "
+                f"Status: {self.replay_status_text} | Progress: {self.replay_progress_text}"
             )
         if self.stale_snapshot:
-            return "Disconnected from gateway. Showing last cached snapshot while auto-reconnect runs in the background."
+            return "The gateway is disconnected. The dashboard is showing the latest saved reading while it keeps trying to reconnect."
         if self.connection_status.startswith("Connected to") and not self.has_snapshot:
-            return "Gateway connected. Waiting for HAN frames..."
+            return "The gateway is connected. Waiting for a meter reading..."
         if self.connection_status == "No gateway found":
-            return "No gateway found. Plug in the ESP gateway or open Advanced to choose a port."
+            return "No gateway was found. Connect the ESP gateway or open the extra tools to choose a port yourself."
         if self.has_snapshot:
-            return "Live HAN data active. Front page shows unified house flow; Analysis gives deeper phase, voltage and event insight."
+            return "Live meter data is coming in. Live View shows what the house is doing now, and the other tabs explain patterns, warnings, costs and repeating loads."
         return self.auto_connect_message
 
     @rx.var(cache=False)
     def mains_network_note(self) -> str:
         if self.mains_network_type == "IT":
-            return "IT mode treats many 230 V loads as phase-to-phase. Events and signatures are labeled as L1-L2, L1-L3, L2-L3, or 3-phase when two conductors move together."
-        return "TN mode treats most 230 V loads as phase-to-neutral. Events and signatures are labeled as L1, L2, L3, or 3-phase from current deltas."
+            return "IT mode assumes many 230 V loads are connected between two phases. The app will label switching as L1-L2, L1-L3, L2-L3 or 3-phase."
+        return "TN mode assumes most 230 V loads are connected between one phase and neutral. The app will label switching as L1, L2, L3 or 3-phase."
 
     @rx.var(cache=False)
     def heatmap_assignment_text(self) -> str:
         if self.mains_network_type == "IT":
-            return "Counts signed power changes at or above the selected watt level and assigns them to L1-L2, L1-L3, L2-L3, or 3-phase using phase-current deltas."
-        return "Counts signed power changes at or above the selected watt level and assigns them to L1, L2, L3, or 3-phase using phase-current deltas."
+            return "Only load changes at or above the selected watt level are counted. Each change is then assigned to L1-L2, L1-L3, L2-L3 or 3-phase by comparing the current change on each line."
+        return "Only load changes at or above the selected watt level are counted. Each change is then assigned to L1, L2, L3 or 3-phase by comparing the current change on each line."
 
     @rx.var(cache=False)
     def heatmap_recent_description(self) -> str:
         if self.mains_network_type == "IT":
-            return "Rows are the most recent days. Each cell shows average net load for the hour, then L1-L2/L1-L3/L2-L3 switch counts and 3P switch count for the selected threshold."
-        return "Rows are the most recent days. Each cell shows average net load for the hour, then L1/L2/L3 switch counts and 3P switch count for the selected threshold."
+            return "Each row is one recent day. Each cell shows the average grid direction for that hour, plus how many larger load changes were seen on L1-L2, L1-L3, L2-L3 and 3-phase."
+        return "Each row is one recent day. Each cell shows the average grid direction for that hour, plus how many larger load changes were seen on L1, L2, L3 and 3-phase."
 
     @rx.var(cache=False)
     def signature_assignment_text(self) -> str:
         if self.mains_network_type == "IT":
-            return "Recurring signatures now include duty-cycle hints. IT mode labels 230 V loads as L1-L2, L1-L3, or L2-L3 when two conductors move together."
-        return "Recurring signatures now include duty-cycle hints. TN mode labels most 230 V loads as L1, L2, or L3 unless all three conductors move together."
+            return "These are repeating load patterns the app has recognized. It also estimates runtime and start habits, and in IT mode it labels 230 V loads as L1-L2, L1-L3 or L2-L3 when two lines move together."
+        return "These are repeating load patterns the app has recognized. It also estimates runtime and start habits, and in TN mode it labels most 230 V loads as L1, L2 or L3 unless all three lines move together."

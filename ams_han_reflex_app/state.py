@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import reflex as rx
 
-from .backend.models import CostRow
+from .backend.models import CapacityStepVisual, CostRow
 from .domain.analysis import DiagnosticsEventRow, HeatmapRow, HistoryTableRow, TopHourRow
 from .domain.signatures import SignatureRowData
 from .state_parts import (
     DashboardAnalysisState,
+    DashboardCostState,
     DashboardConnectionState,
+    DashboardDiagnosticsState,
     DashboardDerivedState,
+    DashboardHistoryState,
     DashboardReplayState,
+    DashboardTabState,
 )
 
 
@@ -30,8 +34,12 @@ class DashboardState(rx.State):
     locals().update(
         _state_members(
             DashboardConnectionState,
-            DashboardAnalysisState,
             DashboardReplayState,
+            DashboardHistoryState,
+            DashboardDiagnosticsState,
+            DashboardCostState,
+            DashboardAnalysisState,
+            DashboardTabState,
             DashboardDerivedState,
         )
     )

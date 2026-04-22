@@ -4,7 +4,7 @@ import reflex as rx
 
 from .app_context import configure_default_app_context
 from .app_meta import APP_AUTHOR, APP_NAME, APP_VERSION
-from .components import dual_bar_card, hero_card, hint_banner, kv, panel, stat_card, tiny_metric
+from .components import capacity_step_card, dual_bar_card, hero_card, hint_banner, kv, panel, stat_card
 from .domain.pricing import PRICE_AREAS
 
 configure_default_app_context()
@@ -30,7 +30,7 @@ def live_heartbeat() -> rx.Component:
 
 def replay_panel() -> rx.Component:
     return panel(
-        "Replay & Demo",
+        "Replay or Demo Data",
         rx.vstack(
             rx.input(
                 placeholder="Path to replay log file",
@@ -38,14 +38,14 @@ def replay_panel() -> rx.Component:
                 on_change=DashboardState.set_replay_path,
             ),
             rx.hstack(
-                rx.button("Load Replay", on_click=DashboardState.load_replay, color_scheme="blue"),
-                rx.button("Load Demo Replay", on_click=DashboardState.load_demo_replay, variant="soft"),
+                rx.button("Load Replay File", on_click=DashboardState.load_replay, color_scheme="blue"),
+                rx.button("Load Demo Data", on_click=DashboardState.load_demo_replay, variant="soft"),
                 spacing="2",
                 width="100%",
                 wrap="wrap",
             ),
             rx.upload(
-                rx.button("Browse / Upload Replay File", variant="soft"),
+                rx.button("Browse or Upload Replay File", variant="soft"),
                 id=UPLOAD_ID,
                 accept={"text/plain": [".log", ".txt"]},
                 max_files=1,
@@ -57,8 +57,8 @@ def replay_panel() -> rx.Component:
             ),
             rx.hstack(
                 rx.button("Start Replay", on_click=DashboardState.start_replay, color_scheme="green"),
-                rx.button("Pause / Resume Replay", on_click=DashboardState.pause_or_resume_replay, variant="soft"),
-                rx.button("Stop", on_click=DashboardState.stop_replay, color_scheme="tomato", variant="soft"),
+                rx.button("Pause or Resume Replay", on_click=DashboardState.pause_or_resume_replay, variant="soft"),
+                rx.button("Stop Replay", on_click=DashboardState.stop_replay, color_scheme="tomato", variant="soft"),
                 spacing="2",
                 width="100%",
                 wrap="wrap",
@@ -77,15 +77,15 @@ def replay_panel() -> rx.Component:
 def simple_sidebar() -> rx.Component:
     return rx.vstack(
         panel(
-            "Setup",
+            "Connect Gateway",
             rx.vstack(
                 rx.text(
-                    "The app finds the gateway automatically and remembers the last good COM port.",
+                    "The app can scan for the gateway automatically and remembers the last working port.",
                     size="2",
                     color=rx.color("gray", 10),
                 ),
-                rx.button("Refresh Ports", on_click=DashboardState.refresh_ports, variant="soft"),
-                rx.button("Auto-connect", on_click=DashboardState.auto_connect_now, color_scheme="blue"),
+                rx.button("Rescan Ports", on_click=DashboardState.refresh_ports, variant="soft"),
+                rx.button("Find Gateway Automatically", on_click=DashboardState.auto_connect_now, color_scheme="blue"),
                 rx.button("Open Advanced Tools", on_click=DashboardState.toggle_advanced, variant="soft"),
                 spacing="3",
                 width="100%",
@@ -94,7 +94,7 @@ def simple_sidebar() -> rx.Component:
             icon="sparkles",
         ),
         panel(
-            "Wi-Fi",
+            "Gateway Wi-Fi",
             rx.vstack(
                 rx.input(placeholder="SSID", value=DashboardState.wifi_ssid, on_change=DashboardState.set_wifi_ssid),
                 rx.input(
@@ -105,7 +105,7 @@ def simple_sidebar() -> rx.Component:
                 ),
                 rx.hstack(
                     rx.button("Save Wi-Fi", on_click=DashboardState.send_set_wifi, color_scheme="blue"),
-                    rx.button("Clear", on_click=DashboardState.send_clear_wifi, variant="soft"),
+                    rx.button("Clear Wi-Fi", on_click=DashboardState.send_clear_wifi, variant="soft"),
                     spacing="2",
                     width="100%",
                 ),
@@ -116,25 +116,25 @@ def simple_sidebar() -> rx.Component:
             icon="wifi",
         ),
         panel(
-            "MQTT",
+            "MQTT Broker",
             rx.vstack(
-                rx.input(placeholder="Broker host", value=DashboardState.mqtt_host, on_change=DashboardState.set_mqtt_host),
+                rx.input(placeholder="Broker address", value=DashboardState.mqtt_host, on_change=DashboardState.set_mqtt_host),
                 rx.input(placeholder="Port", value=DashboardState.mqtt_port, on_change=DashboardState.set_mqtt_port),
-                rx.input(placeholder="User", value=DashboardState.mqtt_user, on_change=DashboardState.set_mqtt_user),
+                rx.input(placeholder="Username", value=DashboardState.mqtt_user, on_change=DashboardState.set_mqtt_user),
                 rx.input(
                     placeholder="Password",
                     type="password",
                     value=DashboardState.mqtt_password,
                     on_change=DashboardState.set_mqtt_password,
                 ),
-                rx.input(placeholder="Prefix", value=DashboardState.mqtt_prefix, on_change=DashboardState.set_mqtt_prefix),
+                rx.input(placeholder="Topic prefix", value=DashboardState.mqtt_prefix, on_change=DashboardState.set_mqtt_prefix),
                 rx.hstack(
                     rx.button("Save MQTT", on_click=DashboardState.send_set_mqtt, color_scheme="blue"),
-                    rx.button("Enable", on_click=DashboardState.mqtt_enable, color_scheme="green"),
+                    rx.button("Enable MQTT", on_click=DashboardState.mqtt_enable, color_scheme="green"),
                     spacing="2",
                     width="100%",
                 ),
-                rx.button("REPUBLISH_DISCOVERY", on_click=DashboardState.republish_discovery, variant="soft"),
+                rx.button("Publish MQTT Discovery", on_click=DashboardState.republish_discovery, variant="soft"),
                 spacing="3",
                 width="100%",
                 align="stretch",
@@ -152,14 +152,14 @@ def advanced_sidebar() -> rx.Component:
         panel(
             "Serial Connection",
             rx.vstack(
-                rx.text("COM Port", size="2", color=rx.color("gray", 10)),
+                rx.text("Serial port", size="2", color=rx.color("gray", 10)),
                 rx.select(
                     DashboardState.ports,
                     value=DashboardState.selected_port,
                     on_change=DashboardState.set_selected_port,
-                    placeholder="Select port",
+                    placeholder="Choose a port",
                 ),
-                rx.text("Baudrate", size="2", color=rx.color("gray", 10)),
+                rx.text("Serial speed (baud)", size="2", color=rx.color("gray", 10)),
                 rx.input(value=DashboardState.baudrate, is_read_only=True),
                 rx.hstack(
                     rx.button("Connect", on_click=DashboardState.connect, color_scheme="indigo"),
@@ -175,7 +175,7 @@ def advanced_sidebar() -> rx.Component:
             icon="plug",
         ),
         panel(
-            "Electrical Model",
+            "Electrical Setup",
             rx.vstack(
                 rx.text("Mains network type", size="2", color=rx.color("gray", 10)),
                 rx.select(
@@ -194,16 +194,16 @@ def advanced_sidebar() -> rx.Component:
         replay_panel(),
         simple_sidebar(),
         panel(
-            "Project Tools",
+            "Saved Data",
             rx.vstack(
-                rx.input(value=DashboardState.db_path, on_change=DashboardState.set_db_path),
+                rx.input(value=DashboardState.db_path, on_change=DashboardState.set_db_path, placeholder="Database path"),
                 rx.hstack(
-                    rx.button("Apply DB Path", on_click=DashboardState.apply_db_path),
-                    rx.button("Refresh History", on_click=DashboardState.refresh_history, variant="soft"),
+                    rx.button("Use This Database", on_click=DashboardState.apply_db_path),
+                    rx.button("Reload Saved Data", on_click=DashboardState.refresh_history, variant="soft"),
                     spacing="2",
                     width="100%",
                 ),
-                rx.button("Clear History", on_click=DashboardState.clear_history, color_scheme="tomato", variant="soft"),
+                rx.button("Clear Saved History", on_click=DashboardState.clear_history, color_scheme="tomato", variant="soft"),
                 spacing="3",
                 width="100%",
                 align="stretch",
@@ -227,26 +227,26 @@ def overview_panel() -> rx.Component:
 
 def latest_snapshot_panel() -> rx.Component:
     return panel(
-        "Latest Snapshot",
+        "Latest Meter Reading",
         rx.cond(
             DashboardState.has_snapshot,
             rx.vstack(
-                kv("Meter", DashboardState.snapshot_meter),
-                kv("Meter time", DashboardState.snapshot_meter_time),
-                kv("Power", DashboardState.snapshot_power),
-                kv("Grid flow", DashboardState.snapshot_grid_flow),
-                kv("Reactive", DashboardState.snapshot_reactive),
+                kv("Meter ID", DashboardState.snapshot_meter),
+                kv("Meter timestamp", DashboardState.snapshot_meter_time),
+                kv("Power now", DashboardState.snapshot_power),
+                kv("Net grid flow", DashboardState.snapshot_grid_flow),
+                kv("Reactive power", DashboardState.snapshot_reactive),
                 kv("Voltage", DashboardState.snapshot_voltage),
                 kv("Current", DashboardState.snapshot_current),
                 kv("Power factor", DashboardState.snapshot_power_factor),
-                kv("Counters", DashboardState.snapshot_counters),
-                kv("Stats", DashboardState.snapshot_stats),
+                kv("Internal counters", DashboardState.snapshot_counters),
+                kv("Frame info", DashboardState.snapshot_stats),
                 spacing="3",
                 width="100%",
                 align="stretch",
             ),
             hint_banner(
-                "No HAN snapshot yet. Check the HAN adapter wiring or wait for the next long KFM_001 frame."
+                "No meter reading yet. Check the HAN adapter wiring or wait for the next long KFM_001 frame."
             ),
         ),
         icon="gauge",
@@ -256,15 +256,15 @@ def latest_snapshot_panel() -> rx.Component:
 
 def device_status_panel() -> rx.Component:
     return panel(
-        "Device & Link Status",
+        "Gateway Status",
         rx.vstack(
-            kv("Device ID", DashboardState.device_id),
+            kv("Gateway ID", DashboardState.device_id),
             kv("Firmware", DashboardState.firmware),
-            kv("MAC", DashboardState.mac),
-            kv("Wi-Fi", DashboardState.wifi_state),
-            kv("IP", DashboardState.wifi_ip),
-            kv("MQTT", DashboardState.mqtt_state),
-            kv("Last frame", DashboardState.last_frame),
+            kv("MAC address", DashboardState.mac),
+            kv("Wi-Fi status", DashboardState.wifi_state),
+            kv("IP address", DashboardState.wifi_ip),
+            kv("MQTT status", DashboardState.mqtt_state),
+            kv("Last telegram", DashboardState.last_frame),
             spacing="3",
             width="100%",
             align="stretch",
@@ -278,26 +278,56 @@ def live_tab() -> rx.Component:
     return rx.vstack(
         hint_banner(DashboardState.onboarding_message, rx.cond(DashboardState.show_cached_banner, "amber", "blue")),
         overview_panel(),
-        dual_bar_card(
-            DashboardState.import_bar_width,
-            DashboardState.export_bar_width,
-            DashboardState.import_bar_text,
-            DashboardState.export_bar_text,
-            DashboardState.bar_scale_text,
+        rx.grid(
+            dual_bar_card(
+                DashboardState.import_bar_width,
+                DashboardState.export_bar_width,
+                DashboardState.import_bar_text,
+                DashboardState.export_bar_text,
+                DashboardState.bar_scale_text,
+                compact=True,
+            ),
+            capacity_step_card(
+                DashboardState.capacity_step_text,
+                DashboardState.capacity_price_text,
+                DashboardState.capacity_basis_kw_text,
+                DashboardState.capacity_basis_text,
+                DashboardState.capacity_warning_text,
+                DashboardState.capacity_steps,
+            ),
+            columns="minmax(0,1.15fr) minmax(320px,0.95fr)",
+            spacing="4",
+            width="100%",
+            align="stretch",
         ),
         rx.grid(
-            tiny_metric("Signed grid average", DashboardState.signed_avg_text, "blue"),
-            tiny_metric("Current hour", DashboardState.current_hour_text, "indigo"),
-            tiny_metric("Projected hour", DashboardState.projected_hour_text, "cyan"),
-            tiny_metric(
-                "Peak import/export",
-                rx.hstack(
-                    rx.text(DashboardState.import_peak_text),
-                    rx.text("|"),
-                    rx.text(DashboardState.export_peak_text),
-                    spacing="2",
-                ),
+            stat_card(
+                "Usually buying or selling",
+                DashboardState.signed_avg_text,
+                "chart_line",
+                "blue",
+                "Based on recent meter readings.",
+            ),
+            stat_card(
+                "Grid Energy This Hour",
+                DashboardState.hour_energy_text,
+                "clock_3",
+                "indigo",
+                DashboardState.hour_energy_detail_text,
+            ),
+            stat_card(
+                "Grid Energy Today",
+                DashboardState.day_energy_text,
+                "calendar",
+                "cyan",
+                DashboardState.day_energy_detail_text,
+            ),
+            stat_card(
+                "Grid Energy This Week",
+                DashboardState.week_energy_text,
+                "calendar_range",
                 "amber",
+                DashboardState.week_energy_detail_text,
             ),
             columns="4",
             spacing="4",
@@ -314,9 +344,9 @@ def live_tab() -> rx.Component:
         panel(
             "Quick Actions",
             rx.hstack(
-                rx.button("GET_INFO", on_click=DashboardState.send_get_info, color_scheme="indigo"),
-                rx.button("GET_STATUS", on_click=DashboardState.send_get_status, color_scheme="indigo"),
-                rx.button("REPUBLISH_DISCOVERY", on_click=DashboardState.republish_discovery, variant="soft"),
+                rx.button("Read Device Info", on_click=DashboardState.send_get_info, color_scheme="indigo"),
+                rx.button("Refresh Status", on_click=DashboardState.send_get_status, color_scheme="indigo"),
+                rx.button("Publish MQTT Discovery", on_click=DashboardState.republish_discovery, variant="soft"),
                 spacing="3",
                 width="100%",
                 wrap="wrap",
@@ -331,16 +361,16 @@ def live_tab() -> rx.Component:
 
 def phase_analysis_panel() -> rx.Component:
     return panel(
-        "Phase & Voltage Analysis",
+        "Phase and Voltage Details",
         rx.vstack(
-            kv("Latest currents", DashboardState.phase_latest_text),
-            kv("Recent current avg", DashboardState.phase_avg_text),
-            kv("Dominant phase", DashboardState.phase_dominant_text),
-            kv("Imbalance", DashboardState.phase_imbalance_text),
-            kv("Latest voltages", DashboardState.voltage_latest_text),
-            kv("Recent voltage avg", DashboardState.voltage_avg_text),
-            kv("Minimum voltages", DashboardState.voltage_min_text),
-            kv("Worst spread", DashboardState.voltage_spread_text),
+            kv("Current right now", DashboardState.phase_latest_text),
+            kv("Average current", DashboardState.phase_avg_text),
+            kv("Most loaded line", DashboardState.phase_dominant_text),
+            kv("Current imbalance", DashboardState.phase_imbalance_text),
+            kv("Voltage right now", DashboardState.voltage_latest_text),
+            kv("Average voltage", DashboardState.voltage_avg_text),
+            kv("Lowest voltage seen", DashboardState.voltage_min_text),
+            kv("Largest voltage spread", DashboardState.voltage_spread_text),
             spacing="3",
             width="100%",
             align="stretch",
@@ -407,17 +437,17 @@ def health_row(row: dict[str, str]) -> rx.Component:
 def analysis_tab() -> rx.Component:
     return rx.vstack(
         rx.grid(
-            stat_card("Signed Grid Average", DashboardState.signed_avg_text, "chart_line", "blue", DashboardState.import_samples_text),
-            stat_card("Current Hour", DashboardState.current_hour_text, "clock_3", "cyan", DashboardState.projected_hour_text),
-            stat_card("Peak Import", DashboardState.import_peak_text, "trending_up", "amber", DashboardState.export_peak_text),
-            stat_card("Phase Focus", DashboardState.phase_dominant_text, "gauge", "violet", DashboardState.phase_imbalance_text),
+            stat_card("Usually buying or selling", DashboardState.signed_avg_text, "chart_line", "blue", DashboardState.import_samples_text),
+            stat_card("This hour so far", DashboardState.current_hour_text, "clock_3", "cyan", DashboardState.projected_hour_text),
+            stat_card("Biggest import hour", DashboardState.import_peak_text, "trending_up", "amber", DashboardState.export_peak_text),
+            stat_card("Most loaded line", DashboardState.phase_dominant_text, "gauge", "violet", DashboardState.phase_imbalance_text),
             columns="4",
             spacing="4",
             width="100%",
         ),
         phase_analysis_panel(),
         panel(
-            "Load Signatures",
+            "Detected Repeating Loads",
             rx.vstack(
                 rx.text(
                     DashboardState.signature_assignment_text,
@@ -431,10 +461,10 @@ def analysis_tab() -> rx.Component:
                                 rx.table.column_header_cell("Signature"),
                                 rx.table.column_header_cell("Phase"),
                                 rx.table.column_header_cell("Typical W"),
-                                rx.table.column_header_cell("Events"),
-                                rx.table.column_header_cell("Avg Runtime"),
-                                rx.table.column_header_cell("Starts/Day"),
-                                rx.table.column_header_cell("Common Start"),
+                                rx.table.column_header_cell("Detections"),
+                                rx.table.column_header_cell("Avg runtime"),
+                                rx.table.column_header_cell("Starts per day"),
+                                rx.table.column_header_cell("Most common start"),
                                 rx.table.column_header_cell("Weekday / Weekend"),
                                 rx.table.column_header_cell("Last Seen"),
                                 rx.table.column_header_cell("Confidence"),
@@ -455,14 +485,14 @@ def analysis_tab() -> rx.Component:
             icon="fingerprint",
         ),
         panel(
-            "Top Hour Buckets",
+            "Busiest Hours",
             rx.table.root(
                 rx.table.header(
                     rx.table.row(
                         rx.table.column_header_cell("Hour"),
-                        rx.table.column_header_cell("Avg Import W"),
-                        rx.table.column_header_cell("Avg Export W"),
-                        rx.table.column_header_cell("Signed Grid W"),
+                        rx.table.column_header_cell("Avg import W"),
+                        rx.table.column_header_cell("Avg export W"),
+                        rx.table.column_header_cell("Net grid W"),
                     )
                 ),
                 rx.table.body(rx.foreach(DashboardState.top_hour_rows, top_hour_row)),
@@ -481,31 +511,31 @@ def analysis_tab() -> rx.Component:
 def diagnostics_tab() -> rx.Component:
     return rx.vstack(
         panel(
-            "Suspected Issues",
+            "Current Warnings",
             rx.cond(
                 DashboardState.has_diagnostics_issues,
                 rx.vstack(rx.foreach(DashboardState.diagnostics_issues, issue_line), spacing="2", align="start", width="100%"),
-                hint_banner("No major issues detected right now.", "green"),
+                hint_banner("No active warnings right now.", "green"),
             ),
             icon="triangle_alert",
         ),
         panel(
-            "Health",
+            "System Health",
             rx.vstack(rx.foreach(DashboardState.health_rows, health_row), spacing="2", align="start", width="100%"),
             icon="shield",
         ),
         panel(
-            "Event Tracker",
+            "Event Timeline",
             rx.vstack(
                 rx.hstack(
                     rx.button("All", on_click=DashboardState.set_event_filter("all"), variant="soft"),
-                    rx.button("Open", on_click=DashboardState.set_event_filter("open"), variant="soft"),
+                    rx.button("Active", on_click=DashboardState.set_event_filter("open"), variant="soft"),
                     rx.button("Resolved", on_click=DashboardState.set_event_filter("resolved"), variant="soft"),
                     rx.button("Severe", on_click=DashboardState.set_event_filter("severe"), variant="soft"),
                     rx.button("Power", on_click=DashboardState.set_event_filter("power"), variant="soft"),
                     rx.button("Voltage", on_click=DashboardState.set_event_filter("voltage"), variant="soft"),
                     rx.button("Phase", on_click=DashboardState.set_event_filter("phase"), variant="soft"),
-                    rx.button("Quality", on_click=DashboardState.set_event_filter("data_quality"), variant="soft"),
+                    rx.button("Data Quality", on_click=DashboardState.set_event_filter("data_quality"), variant="soft"),
                     spacing="2",
                     wrap="wrap",
                 ),
@@ -515,13 +545,13 @@ def diagnostics_tab() -> rx.Component:
                             rx.table.row(
                                 rx.table.column_header_cell("Time"),
                                 rx.table.column_header_cell("Category"),
-                                rx.table.column_header_cell("Type"),
+                                rx.table.column_header_cell("Event"),
                                 rx.table.column_header_cell("Status"),
                                 rx.table.column_header_cell("Severity"),
-                                rx.table.column_header_cell("Conf"),
-                                rx.table.column_header_cell("Delta W"),
+                                rx.table.column_header_cell("Confidence"),
+                                rx.table.column_header_cell("Power change"),
                                 rx.table.column_header_cell("Phase"),
-                                rx.table.column_header_cell("Note"),
+                                rx.table.column_header_cell("Explanation"),
                             )
                         ),
                         rx.table.body(rx.foreach(DashboardState.event_rows, event_row)),
@@ -555,7 +585,7 @@ def daily_hour_row(row: dict[str, float | str]) -> rx.Component:
 
 def daily_graph_panel() -> rx.Component:
     return panel(
-        "Daily load graph",
+        "Daily Usage Graph",
         rx.vstack(
             rx.hstack(
                 rx.hstack(
@@ -584,7 +614,7 @@ def daily_graph_panel() -> rx.Component:
                 bar_category_gap="15%",
             ),
             rx.text(
-                "Hourly averages for the latest meter day. Import and export are shown as separate bars; the line shows signed grid flow.",
+                "This graph shows the latest day with data. Blue bars show power bought from the grid, green bars show power sent back, and the line shows the net grid direction.",
                 size="2",
                 color=rx.color("gray", 10),
             ),
@@ -599,24 +629,24 @@ def daily_graph_panel() -> rx.Component:
 def daily_tab() -> rx.Component:
     return rx.vstack(
         rx.grid(
-            stat_card("Latest meter day", DashboardState.daily_date_text, "calendar", "blue", DashboardState.daily_hours_text),
-            stat_card("Daily peak", DashboardState.daily_peak_text, "chart_column", "amber", "Based on hourly average buckets"),
-            stat_card("Signed average", DashboardState.signed_avg_text, "chart_line", "cyan", "Across stored snapshot history"),
-            stat_card("Current hour", DashboardState.current_hour_text, "clock_3", "indigo", DashboardState.projected_hour_text),
+            stat_card("Latest Day With Data", DashboardState.daily_date_text, "calendar", "blue", DashboardState.daily_hours_text),
+            stat_card("Highest Hour", DashboardState.daily_peak_text, "chart_column", "amber", "Based on hourly averages"),
+            stat_card("Usually buying or selling", DashboardState.signed_avg_text, "chart_line", "cyan", "Across the recent saved samples"),
+            stat_card("This hour so far", DashboardState.current_hour_text, "clock_3", "indigo", DashboardState.projected_hour_text),
             columns="4",
             spacing="4",
             width="100%",
         ),
         daily_graph_panel(),
         panel(
-            "Daily hourly buckets",
+            "Hour-By-Hour Summary",
             rx.table.root(
                 rx.table.header(
                     rx.table.row(
                         rx.table.column_header_cell("Hour"),
-                        rx.table.column_header_cell("Import kW"),
-                        rx.table.column_header_cell("Export kW"),
-                        rx.table.column_header_cell("Signed kW"),
+                        rx.table.column_header_cell("Avg import kW"),
+                        rx.table.column_header_cell("Avg export kW"),
+                        rx.table.column_header_cell("Net grid kW"),
                     )
                 ),
                 rx.table.body(rx.foreach(DashboardState.daily_graph_rows, daily_hour_row)),
@@ -707,13 +737,13 @@ def heatmap_legend() -> rx.Component:
     return rx.hstack(
         rx.hstack(
             rx.box(width="18px", height="18px", border_radius="6px", bg="rgba(37, 99, 235, 0.55)", border="1px solid rgba(148, 163, 184, 0.28)"),
-            rx.text("Import-heavy hour", size="2", color=rx.color("gray", 10)),
+            rx.text("Mostly buying power from the grid", size="2", color=rx.color("gray", 10)),
             spacing="2",
             align="center",
         ),
         rx.hstack(
             rx.box(width="18px", height="18px", border_radius="6px", bg="rgba(22, 163, 74, 0.55)", border="1px solid rgba(148, 163, 184, 0.28)"),
-            rx.text("Export-heavy hour", size="2", color=rx.color("gray", 10)),
+            rx.text("Mostly sending power back", size="2", color=rx.color("gray", 10)),
             spacing="2",
             align="center",
         ),
@@ -725,7 +755,7 @@ def heatmap_legend() -> rx.Component:
                 bg="linear-gradient(135deg, rgba(100, 116, 139, 0.18) 0%, rgba(100, 116, 139, 0.18) 74%, rgba(250, 204, 21, 0.82) 84%, rgba(249, 115, 22, 0.86) 92%, rgba(239, 68, 68, 0.92) 100%)",
                 border="1px solid rgba(148, 163, 184, 0.28)",
             ),
-            rx.text("No corner = quiet hour. Yellow = light switching. Orange = medium. Red = busiest switching hour.", size="2", color=rx.color("gray", 10)),
+            rx.text("Corner color shows switching: none = quiet, yellow = light, orange = medium, red = busiest hour.", size="2", color=rx.color("gray", 10)),
             spacing="2",
             align="center",
         ),
@@ -767,19 +797,19 @@ def heatmap_grid(rows, description: str) -> rx.Component:
 def heatmap_tab() -> rx.Component:
     return rx.vstack(
         rx.grid(
-            stat_card("Coverage", DashboardState.heatmap_days_text, "calendar_range", "blue", "Time-weighted hourly buckets"),
-            stat_card("Peak hour", DashboardState.heatmap_peak_text, "flame", "amber", "Highest average hourly use"),
-            stat_card("Switch activity", DashboardState.heatmap_change_text, "activity", "violet", "Most switch-active hour at selected threshold"),
-            stat_card("Weekly focus", DashboardState.heatmap_weekday_text, "chart_no_axes_combined", "green", "Busiest average weekday profile"),
+            stat_card("Days Included", DashboardState.heatmap_days_text, "calendar_range", "blue", "Built from time-weighted hourly buckets"),
+            stat_card("Highest-Use Hour", DashboardState.heatmap_peak_text, "flame", "amber", "The hour with the highest average usage"),
+            stat_card("Most Switching", DashboardState.heatmap_change_text, "activity", "violet", "The busiest hour for load changes at the chosen threshold"),
+            stat_card("Busiest Weekday", DashboardState.heatmap_weekday_text, "chart_no_axes_combined", "green", "Average weekday profile with the highest use"),
             columns="4",
             spacing="4",
             width="100%",
         ),
         panel(
-            "Heatmap Settings",
+            "Usage Map Settings",
             rx.hstack(
                 rx.vstack(
-                    rx.text("Load switch threshold", size="2", color=rx.color("gray", 10)),
+                    rx.text("Minimum load change to count", size="2", color=rx.color("gray", 10)),
                     rx.text(
                         DashboardState.heatmap_assignment_text,
                         size="2",
@@ -809,7 +839,7 @@ def heatmap_tab() -> rx.Component:
             icon="sliders_horizontal",
         ),
         panel(
-            "Recent Hourly Heatmap",
+            "Recent Days By Hour",
             heatmap_grid(
                 DashboardState.heatmap_recent_rows,
                 DashboardState.heatmap_recent_description,
@@ -817,10 +847,10 @@ def heatmap_tab() -> rx.Component:
             icon="grid_3x3",
         ),
         panel(
-            "Weekly Pattern Heatmap",
+            "Typical Weekday Pattern",
             heatmap_grid(
                 DashboardState.heatmap_weekday_rows,
-                "Rows collapse the same data by weekday so routines such as morning heating, evening cooking, or export windows become easier to spot across repeated weeks.",
+                "This view groups the same data by weekday, making repeated routines such as morning heating, cooking, or export windows easier to spot.",
             ),
             icon="calendar_days",
         ),
@@ -847,10 +877,10 @@ def cost_row(row: dict[str, float | str]) -> rx.Component:
 def cost_tab() -> rx.Component:
     return rx.vstack(
         rx.grid(
-            stat_card("Price area", DashboardState.price_area, "badge_cent", "violet", DashboardState.cost_source_text),
-            stat_card("Spot now", DashboardState.spot_now_text, "clock_3", "blue", DashboardState.grid_now_text),
-            stat_card("Total energy rate", DashboardState.total_now_text, "wallet", "green", DashboardState.current_hour_cost_text),
-            stat_card("Capacity estimate", DashboardState.capacity_step_text, "gauge", "amber", DashboardState.capacity_price_text),
+            stat_card("Price Area", DashboardState.price_area, "badge_cent", "violet", DashboardState.cost_source_text),
+            stat_card("Spot Price Now", DashboardState.spot_now_text, "clock_3", "blue", DashboardState.grid_now_text),
+            stat_card("Total Price Now", DashboardState.total_now_text, "wallet", "green", DashboardState.current_hour_cost_text),
+            stat_card("Current Tariff Step", DashboardState.capacity_step_text, "gauge", "amber", DashboardState.capacity_price_text),
             columns="4",
             spacing="4",
             width="100%",
@@ -858,20 +888,20 @@ def cost_tab() -> rx.Component:
         rx.cond(
             DashboardState.has_cost_warning,
             panel(
-                "Price Source Warning",
+                "Price Warning",
                 hint_banner(DashboardState.cost_warning_text, "amber"),
                 icon="triangle_alert",
             ),
             rx.fragment(),
         ),
         panel(
-            "Cost settings",
+            "Electricity Price Settings",
             rx.vstack(
                 rx.select(PRICE_AREAS, value=DashboardState.price_area, on_change=DashboardState.set_price_area),
                 rx.hstack(
-                    rx.input(value=DashboardState.grid_day_rate, on_change=DashboardState.set_grid_day_rate, width="180px"),
-                    rx.input(value=DashboardState.grid_night_rate, on_change=DashboardState.set_grid_night_rate, width="180px"),
-                    rx.button("Apply cost settings", on_click=DashboardState.apply_cost_settings),
+                    rx.input(placeholder="Daytime grid tariff (NOK/kWh)", value=DashboardState.grid_day_rate, on_change=DashboardState.set_grid_day_rate, width="220px"),
+                    rx.input(placeholder="Night grid tariff (NOK/kWh)", value=DashboardState.grid_night_rate, on_change=DashboardState.set_grid_night_rate, width="220px"),
+                    rx.button("Save Electricity Prices", on_click=DashboardState.apply_cost_settings),
                     spacing="3",
                     wrap="wrap",
                 ),
@@ -882,15 +912,15 @@ def cost_tab() -> rx.Component:
             icon="wallet",
         ),
         panel(
-            "Cost details",
+            "Today's Cost Summary",
             rx.vstack(
-                kv("Import cost now", DashboardState.import_cost_now_text),
-                kv("Export value now", DashboardState.export_value_now_text),
-                kv("Daily import cost", DashboardState.daily_import_cost_text),
-                kv("Daily export value", DashboardState.daily_export_value_text),
-                kv("Daily net cost", DashboardState.daily_net_cost_text),
-                kv("Capacity basis", DashboardState.capacity_basis_text),
-                kv("Capacity note", DashboardState.capacity_warning_text),
+                kv("Import cost right now", DashboardState.import_cost_now_text),
+                kv("Export value right now", DashboardState.export_value_now_text),
+                kv("Import cost today", DashboardState.daily_import_cost_text),
+                kv("Export value today", DashboardState.daily_export_value_text),
+                kv("Net cost today", DashboardState.daily_net_cost_text),
+                kv("Tariff based on", DashboardState.capacity_basis_text),
+                kv("Tariff note", DashboardState.capacity_warning_text),
                 spacing="3",
                 width="100%",
                 align="stretch",
@@ -898,20 +928,20 @@ def cost_tab() -> rx.Component:
             icon="file_text",
         ),
         panel(
-            "Hourly cost rows",
+            "Hourly Cost Breakdown",
             rx.box(
                 rx.table.root(
                     rx.table.header(
                         rx.table.row(
                             rx.table.column_header_cell("Hour"),
-                            rx.table.column_header_cell("Spot"),
-                            rx.table.column_header_cell("Grid"),
-                            rx.table.column_header_cell("Total"),
-                            rx.table.column_header_cell("Import kW"),
-                            rx.table.column_header_cell("Export kW"),
-                            rx.table.column_header_cell("Import cost"),
-                            rx.table.column_header_cell("Export value"),
-                            rx.table.column_header_cell("Net cost"),
+                            rx.table.column_header_cell("Spot NOK/kWh"),
+                            rx.table.column_header_cell("Grid NOK/kWh"),
+                            rx.table.column_header_cell("Total NOK/kWh"),
+                            rx.table.column_header_cell("Avg import kW"),
+                            rx.table.column_header_cell("Avg export kW"),
+                            rx.table.column_header_cell("Import cost NOK"),
+                            rx.table.column_header_cell("Export value NOK"),
+                            rx.table.column_header_cell("Net cost NOK"),
                         )
                     ),
                     rx.table.body(rx.foreach(DashboardState.cost_rows, cost_row)),
@@ -951,27 +981,27 @@ def history_row(row: dict[str, str]) -> rx.Component:
 def history_tab() -> rx.Component:
     return rx.vstack(
         rx.grid(
-            stat_card("Rows", DashboardState.db_summary, "database", "slate"),
-            stat_card("Latest", DashboardState.latest_history_text, "clock_3", "blue"),
+            stat_card("Stored Readings", DashboardState.db_summary, "database", "slate"),
+            stat_card("Most Recent Reading", DashboardState.latest_history_text, "clock_3", "blue"),
             stat_card(
-                "Averages",
+                "Average Power",
                 rx.hstack(rx.text(DashboardState.avg_import_text), rx.text("|"), rx.text(DashboardState.avg_net_text), spacing="2"),
                 "bar_chart_3",
                 "cyan",
             ),
-            stat_card("Peaks", DashboardState.peak_text, "chart_column", "amber"),
+            stat_card("Peak Power", DashboardState.peak_text, "chart_column", "amber"),
             columns="4",
             spacing="4",
             width="100%",
         ),
         panel(
-            "Snapshot History",
+            "Saved Meter Readings",
             rx.vstack(
                 rx.hstack(
-                    rx.input(value=DashboardState.history_limit, on_change=DashboardState.set_history_limit, width="120px"),
-                    rx.input(value=DashboardState.db_path, on_change=DashboardState.set_db_path),
+                    rx.input(placeholder="How many rows to show", value=DashboardState.history_limit, on_change=DashboardState.set_history_limit, width="170px"),
+                    rx.input(placeholder="Database path", value=DashboardState.db_path, on_change=DashboardState.set_db_path),
                     rx.button(
-                        "Refresh",
+                        "Reload Saved Data",
                         on_click=[
                             DashboardState.refresh_history,
                             DashboardState.refresh_analysis,
@@ -979,7 +1009,7 @@ def history_tab() -> rx.Component:
                             DashboardState.refresh_diagnostics,
                         ],
                     ),
-                    rx.button("Apply DB", on_click=DashboardState.apply_db_path, variant="soft"),
+                    rx.button("Use This Database", on_click=DashboardState.apply_db_path, variant="soft"),
                     spacing="3",
                     width="100%",
                     wrap="wrap",
@@ -989,18 +1019,18 @@ def history_tab() -> rx.Component:
                         rx.table.header(
                             rx.table.row(
                                 rx.table.column_header_cell("Received"),
-                                rx.table.column_header_cell("Meter Time"),
-                                rx.table.column_header_cell("Meter"),
+                                rx.table.column_header_cell("Meter timestamp"),
+                                rx.table.column_header_cell("Meter ID"),
                                 rx.table.column_header_cell("Import W"),
                                 rx.table.column_header_cell("Export W"),
-                                rx.table.column_header_cell("Signed Grid W"),
-                                rx.table.column_header_cell("Avg V"),
-                                rx.table.column_header_cell("L1 A"),
-                                rx.table.column_header_cell("L2 A"),
-                                rx.table.column_header_cell("L3 A"),
-                                rx.table.column_header_cell("PF"),
-                                rx.table.column_header_cell("RX"),
-                                rx.table.column_header_cell("Bad"),
+                                rx.table.column_header_cell("Net grid W"),
+                                rx.table.column_header_cell("Avg voltage"),
+                                rx.table.column_header_cell("L1 current"),
+                                rx.table.column_header_cell("L2 current"),
+                                rx.table.column_header_cell("L3 current"),
+                                rx.table.column_header_cell("Power factor"),
+                                rx.table.column_header_cell("Frames received"),
+                                rx.table.column_header_cell("Bad frames"),
                             )
                         ),
                         rx.table.body(rx.foreach(DashboardState.history_rows, history_row)),
@@ -1029,15 +1059,24 @@ def log_line(line: str) -> rx.Component:
 
 def log_tab() -> rx.Component:
     return panel(
-        "Serial / App Log",
-        rx.box(
-            rx.foreach(DashboardState.logs, log_line),
-            bg=rx.color("slate", 2),
-            border_radius="16px",
-            padding="1em",
-            min_height="520px",
-            max_height="720px",
-            overflow_y="auto",
+        "Connection Log",
+        rx.vstack(
+            rx.text(
+                "Newest serial and app messages are shown first.",
+                size="2",
+                color=rx.color("gray", 10),
+            ),
+            rx.box(
+                rx.foreach(DashboardState.logs, log_line),
+                bg=rx.color("slate", 2),
+                border_radius="16px",
+                padding="1em",
+                min_height="520px",
+                max_height="720px",
+                overflow_y="auto",
+                width="100%",
+            ),
+            spacing="3",
             width="100%",
         ),
         icon="terminal",
@@ -1053,7 +1092,7 @@ def index() -> rx.Component:
                     rx.vstack(
                         rx.heading(APP_NAME, size="8"),
                         rx.text(
-                            "Reflex dashboard with replay, cost, diagnostics and signature intelligence.",
+                            "Live dashboard for current power, usage patterns, costs, warnings, load signatures and replay.",
                             color=rx.color("gray", 10),
                         ),
                         rx.hstack(
@@ -1072,23 +1111,23 @@ def index() -> rx.Component:
                             on_click=rx.toggle_color_mode,
                             variant="soft",
                         ),
-                        rx.button("Refresh Ports", on_click=DashboardState.refresh_ports, variant="soft"),
+                        rx.button("Rescan Ports", on_click=DashboardState.refresh_ports, variant="soft"),
                         rx.button(
-                            rx.cond(DashboardState.show_advanced, "Hide Advanced", "Show Advanced"),
+                            rx.cond(DashboardState.show_advanced, "Hide Advanced Tools", "Show Advanced Tools"),
                             on_click=DashboardState.toggle_advanced,
                             variant="soft",
                         ),
-                        rx.button("Get Status", on_click=DashboardState.send_get_status, color_scheme="indigo"),
+                        rx.button("Read Status Now", on_click=DashboardState.send_get_status, color_scheme="indigo"),
                         spacing="3",
                     ),
                     width="100%",
                     align="center",
                 ),
                 rx.grid(
-                    stat_card("Connection", DashboardState.connection_status, "plug", "blue"),
-                    stat_card("Wi-Fi", DashboardState.wifi_summary, "wifi", "green"),
-                    stat_card("MQTT", DashboardState.mqtt_state, "radio_tower", "violet"),
-                    stat_card("Database", DashboardState.db_summary, "database", "slate"),
+                    stat_card("Gateway Connection", DashboardState.connection_status, "plug", "blue"),
+                    stat_card("Gateway Wi-Fi", DashboardState.wifi_summary, "wifi", "green"),
+                    stat_card("MQTT Connection", DashboardState.mqtt_state, "radio_tower", "violet"),
+                    stat_card("Saved Meter Readings", DashboardState.db_summary, "database", "slate"),
                     columns="repeat(4, minmax(0,1fr))",
                     spacing="4",
                     width="100%",
@@ -1097,14 +1136,14 @@ def index() -> rx.Component:
                     rx.cond(DashboardState.show_advanced, advanced_sidebar(), simple_sidebar()),
                     rx.tabs.root(
                         rx.tabs.list(
-                            rx.tabs.trigger("Overview", value="live"),
-                            rx.tabs.trigger("Analysis", value="analysis"),
-                            rx.tabs.trigger("Diagnostics", value="diagnostics"),
-                        rx.tabs.trigger("Daily", value="daily"),
-                        rx.tabs.trigger("Heatmap", value="heatmap"),
-                        rx.tabs.trigger("Cost", value="cost"),
+                            rx.tabs.trigger("Live View", value="live"),
+                            rx.tabs.trigger("Power Patterns", value="analysis"),
+                            rx.tabs.trigger("Warnings", value="diagnostics"),
+                        rx.tabs.trigger("Daily Use", value="daily"),
+                        rx.tabs.trigger("Usage Map", value="heatmap"),
+                        rx.tabs.trigger("Costs", value="cost"),
                         rx.tabs.trigger("History", value="history"),
-                        rx.tabs.trigger("Log", value="log"),
+                        rx.tabs.trigger("Connection Log", value="log"),
                     ),
                     rx.tabs.content(live_tab(), value="live"),
                     rx.tabs.content(analysis_tab(), value="analysis"),
@@ -1140,5 +1179,5 @@ def index() -> rx.Component:
     )
 
 
-app = rx.App()
+app = rx.App(toaster=None)
 app.add_page(index, on_load=DashboardState.on_load)

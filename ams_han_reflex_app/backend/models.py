@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -138,6 +138,25 @@ class CostRow:
 
 
 @dataclass(slots=True)
+class CapacityStepVisual:
+    label: str
+    price_text: str
+    limit_text: str
+    fill_percent: str = "0%"
+    status: str = "future"
+
+
+@dataclass(slots=True)
+class CapacityEstimateData:
+    step_label: str = "-"
+    step_price_text: str = "-"
+    basis_kw_text: str = "0.00 kW basis"
+    basis_text: str = "-"
+    warning_text: str = "-"
+    steps: list[CapacityStepVisual] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class CostSummaryData:
     source_text: str
     spot_now_text: str
@@ -240,3 +259,53 @@ class GatewaySettings:
             "heatmap_switch_threshold": self.heatmap_switch_threshold,
             "mains_network_type": self.mains_network_type,
         }
+
+
+@dataclass(slots=True)
+class DashboardSyncData:
+    connection_status: str = "Searching for gateway"
+    mains_network_type: str = "TN"
+    show_advanced: bool = False
+    baudrate: int = 115200
+    replay_path: str = ""
+    db_path: str = ""
+    price_area: str = "NO3"
+    grid_day_rate: float = 0.4254
+    grid_night_rate: float = 0.2642
+    heatmap_switch_threshold: int = 300
+    preferred_port_label: str = ""
+    device_id: str = "-"
+    firmware: str = "-"
+    mac: str = "-"
+    wifi_state: str = "DISCONNECTED"
+    wifi_ip: str = ""
+    mqtt_state: str = "IDLE"
+    last_frame: str = "seq=0, len=0"
+    snapshot_meter: str = "-"
+    snapshot_meter_time: str = "-"
+    snapshot_power: str = "-"
+    snapshot_grid_flow: str = "-"
+    snapshot_reactive: str = "-"
+    snapshot_voltage: str = "-"
+    snapshot_current: str = "-"
+    snapshot_power_factor: str = "-"
+    snapshot_counters: str = "-"
+    snapshot_stats: str = "-"
+    overview_title: str = "Waiting for live data"
+    overview_value: str = "-"
+    overview_subtitle: str = "No valid HAN snapshot yet"
+    overview_accent: str = "blue"
+    import_bar_width: str = "0%"
+    export_bar_width: str = "0%"
+    import_bar_text: str = "Import 0.0 W"
+    export_bar_text: str = "Export 0.0 W"
+    bar_scale_text: str = "No recent peak yet"
+    stale_snapshot: bool = False
+    replay_loaded: bool = False
+    replay_active: bool = False
+    replay_paused: bool = False
+    replay_status_text: str = "Idle"
+    replay_progress_text: str = "No replay loaded"
+    replay_source_text: str = "-"
+    auto_connect_message: str = "Searching for gateway..."
+    logs: list[str] = field(default_factory=list)

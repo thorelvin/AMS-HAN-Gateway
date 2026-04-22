@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from ..backend.models import CostRow, CostSummaryData, SnapshotEvent
+from ..backend.models import CapacityEstimateData, CostRow, CostSummaryData, SnapshotEvent
 from ..domain.pricing import GRID_DAY_RATE_NOK_PER_KWH, GRID_NIGHT_RATE_NOK_PER_KWH, PriceProvider, estimate_capacity
 from .history_service import HistoryService
 
@@ -11,6 +11,41 @@ class CostService:
     def __init__(self, history_service: HistoryService, price_provider: PriceProvider | None = None) -> None:
         self.history_service = history_service
         self.price_provider = price_provider or PriceProvider()
+
+    def capacity_estimate(self, limit: int = 12000) -> CapacityEstimateData:
+        intervals = self.history_service.integrated_intervals(limit)
+        latest_day = max((interval.start.date() for interval in intervals), default=None)
+        month = latest_day.strftime("%Y-%m") if latest_day else ""
+        bucket_map: dict[str, dict[str, float | str]] = {}
+        for interval in intervals:
+            start_dt = interval.start.astimezone()
+            if month and not start_dt.strftime("%Y-%m-%d").startswith(month):
+                continue
+            key = start_dt.strftime("%Y-%m-%d %H")
+            bucket = bucket_map.setdefault(
+                key,
+                {
+                    "day": start_dt.strftime("%Y-%m-%d"),
+                    "hour": start_dt.strftime("%H"),
+                    "import_kwh": 0.0,
+                    "duration_h": 0.0,
+                },
+            )
+            bucket["import_kwh"] += interval.import_kw * interval.hours
+            bucket["duration_h"] += interval.hours
+
+        hourly_for_capacity: list[dict[str, float | str]] = []
+        for key in sorted(bucket_map.keys()):
+            bucket = bucket_map[key]
+            duration_h = max(float(bucket["duration_h"]), 1e-6)
+            hourly_for_capacity.append(
+                {
+                    "day": bucket["day"],
+                    "hour": bucket["hour"],
+                    "avg_import_kw": float(bucket["import_kwh"]) / duration_h,
+                }
+            )
+        return estimate_capacity(hourly_for_capacity)
 
     def build_summary(
         self,
@@ -95,12 +130,7 @@ class CostService:
                 )
             )
 
-        hourly_for_capacity: list[dict[str, float | str]] = []
-        month = latest_day.strftime("%Y-%m") if latest_day else ""
-        for row in rows:
-            if month and row.day.startswith(month):
-                hourly_for_capacity.append({"day": row.day, "hour": row.hour, "avg_import_kw": row.import_kw})
-        capacity = estimate_capacity(hourly_for_capacity)
+        capacity = self.capacity_estimate(limit)
         warnings: list[str] = []
         if price_quote.warning_text:
             warnings.append(price_quote.warning_text)
@@ -123,9 +153,9 @@ class CostService:
             daily_export_value_text=f"{daily_export:.2f} NOK daily export value",
             daily_net_cost_text=f"{daily_import - daily_export:.2f} NOK daily net cost",
             current_hour_cost_text=f"{current_hour_import:.2f} NOK current hour import est.",
-            capacity_step_text=capacity["step_label"],
-            capacity_price_text=capacity["step_price_text"],
-            capacity_basis_text=capacity["basis_text"],
-            capacity_warning_text=capacity["warning_text"],
+            capacity_step_text=capacity.step_label,
+            capacity_price_text=capacity.step_price_text,
+            capacity_basis_text=capacity.basis_text,
+            capacity_warning_text=capacity.warning_text,
             rows=rows,
         )

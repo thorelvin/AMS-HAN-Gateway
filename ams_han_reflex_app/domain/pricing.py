@@ -7,6 +7,8 @@ from urllib.request import Request, urlopen
 import json
 import threading
 
+from ..backend.models import CapacityEstimateData, CapacityStepVisual
+
 PRICE_AREAS = ['NO1', 'NO2', 'NO3', 'NO4', 'NO5']
 GRID_DAY_RATE_NOK_PER_KWH = 0.4254
 GRID_NIGHT_RATE_NOK_PER_KWH = 0.2642
@@ -166,7 +168,7 @@ class PriceProvider:
         return 'Night (22-06)' if (hour >= 22 or hour < 6) else 'Day (06-22)'
 
 
-def estimate_capacity(hourly_rows: list[dict[str, Any]]) -> dict[str, str]:
+def estimate_capacity(hourly_rows: list[dict[str, Any]]) -> CapacityEstimateData:
     best_by_day: dict[str, float] = {}
     for row in hourly_rows:
         day = str(row.get('day', ''))
@@ -195,9 +197,38 @@ def estimate_capacity(hourly_rows: list[dict[str, Any]]) -> dict[str, str]:
             break
     if next_step is not None:
         warning = f'If this month basis rises above {next_step[0]:.1f} kW, estimated step becomes {next_step[1]}'
-    return {
-        'step_label': chosen[1],
-        'step_price_text': f'~{chosen[2]} NOK/month',
-        'basis_text': f'{basis_kw:.2f} kW basis from top 3 hourly averages on different days this month ({days})',
-        'warning_text': warning or 'Estimate only. Local network tariffs can differ.',
-    }
+    steps: list[CapacityStepVisual] = []
+    lower_kw = 0.0
+    active_label = chosen[1]
+    for upper_kw, label, price in CAPACITY_STEPS:
+        span_kw = max(upper_kw - lower_kw, 0.1)
+        is_active = label == active_label
+        if basis_kw >= upper_kw:
+            fill_percent = "100%"
+            status = "active" if is_active else "passed"
+        elif is_active:
+            progress = max(0.0, min(100.0, ((basis_kw - lower_kw) / span_kw) * 100.0))
+            fill_percent = f"{progress:.1f}%"
+            status = "active"
+        else:
+            fill_percent = "0%"
+            status = "future"
+        steps.append(
+            CapacityStepVisual(
+                label=label,
+                price_text=f"{price} NOK/mo",
+                limit_text=f"Up to {upper_kw:.0f} kW",
+                fill_percent=fill_percent,
+                status=status,
+            )
+        )
+        lower_kw = upper_kw
+    steps.reverse()
+    return CapacityEstimateData(
+        step_label=chosen[1],
+        step_price_text=f'~{chosen[2]} NOK/month',
+        basis_kw_text=f'{basis_kw:.2f} kW basis',
+        basis_text=f'{basis_kw:.2f} kW basis from top 3 hourly averages on different days this month ({days})',
+        warning_text=warning or 'Estimate only. Local network tariffs can differ.',
+        steps=steps,
+    )

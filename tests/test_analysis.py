@@ -5,7 +5,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ams_han_reflex_app.backend.models import HistoryRecord, SnapshotEvent
-from ams_han_reflex_app.domain.analysis import build_load_heatmaps, phase_analysis
+from ams_han_reflex_app.domain.analysis import analysis_summary, build_load_heatmaps, phase_analysis
 
 
 def _record(
@@ -46,6 +46,32 @@ def _record(
 
 
 class HeatmapAnalysisTest(unittest.TestCase):
+    def test_analysis_summary_reports_clear_flow_and_energy_windows(self):
+        records_desc = [
+            _record(7, "2026-04-22 10:20:00", 1000.0, 0.0),
+            _record(6, "2026-04-22 10:10:00", 1200.0, 0.0),
+            _record(5, "2026-04-22 10:00:00", 1200.0, 0.0),
+            _record(4, "2026-04-22 09:50:00", 0.0, 600.0),
+            _record(3, "2026-04-22 09:40:00", 0.0, 600.0),
+            _record(2, "2026-04-21 12:10:00", 3000.0, 0.0),
+            _record(1, "2026-04-21 12:00:00", 3000.0, 0.0),
+        ]
+
+        summary = analysis_summary(records_desc, energy_records_desc=records_desc)
+
+        self.assertEqual(summary.signed_avg_text, "1.17 kW avg import")
+        self.assertEqual(summary.current_hour_text, "1.13 kW avg import this hour")
+        self.assertEqual(summary.projected_hour_text, "1.13 kWh import projected this hour")
+        self.assertEqual(summary.hour_energy_text, "0.40 kWh net import this hour")
+        self.assertEqual(
+            summary.hour_energy_detail_text,
+            "Import 0.40 | Export 0.00 kWh | 1.13 kWh import projected this hour",
+        )
+        self.assertEqual(summary.day_energy_text, "0.20 kWh net import today")
+        self.assertEqual(summary.day_energy_detail_text, "Import 0.40 | Export 0.20 kWh")
+        self.assertEqual(summary.week_energy_text, "0.70 kWh net import this week")
+        self.assertEqual(summary.week_energy_detail_text, "Import 0.90 | Export 0.20 kWh")
+
     def test_build_load_heatmaps_returns_phase_switch_counts(self):
         records_desc = [
             _record(8, "2026-04-21 09:10:00", 0.0, 900.0, 1.0, 1.0, 1.0),

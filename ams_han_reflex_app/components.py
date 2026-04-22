@@ -87,25 +87,175 @@ def tiny_metric(title: str, value, accent: str = 'blue') -> rx.Component:
     )
 
 
-def dual_bar_card(import_width, export_width, import_text, export_text, scale_text) -> rx.Component:
+def dual_bar_card(import_width, export_width, import_text, export_text, scale_text, compact: bool = False) -> rx.Component:
+    bar_height = '24px' if compact else '28px'
+    size = '2' if compact else '3'
+    inner_spacing = '4' if compact else '4'
+    body_padding = '1.1em 1.1em' if compact else None
     return rx.card(
         rx.vstack(
-            rx.hstack(rx.icon(tag='chart_column', size=18), rx.heading('Import / Export', size='4'), align='center', spacing='2'),
+            rx.hstack(rx.icon(tag='chart_column', size=18), rx.heading('Power Flow Now', size='4'), align='center', spacing='2'),
             rx.vstack(
-                rx.hstack(rx.text('Import', size='2', color=rx.color('gray', 10)), rx.spacer(), rx.text(import_text, size='3', weight='medium'), width='100%'),
+                rx.hstack(rx.text('From grid', size='2', color=rx.color('gray', 10)), rx.spacer(), rx.text(import_text, size='3', weight='medium'), width='100%'),
                 rx.box(
-                    rx.box(width=import_width, height='12px', bg=rx.color('blue', 9), border_radius='999px'),
-                    bg=rx.color('blue', 3), width='100%', height='12px', border_radius='999px', overflow='hidden'
+                    rx.box(width=import_width, height=bar_height, bg=rx.color('blue', 9), border_radius='999px'),
+                    bg=rx.color('blue', 3), width='100%', height=bar_height, border_radius='999px', overflow='hidden'
                 ),
-                rx.hstack(rx.text('Export', size='2', color=rx.color('gray', 10)), rx.spacer(), rx.text(export_text, size='3', weight='medium'), width='100%'),
+                rx.hstack(rx.text('To grid', size='2', color=rx.color('gray', 10)), rx.spacer(), rx.text(export_text, size='3', weight='medium'), width='100%'),
                 rx.box(
-                    rx.box(width=export_width, height='12px', bg=rx.color('green', 9), border_radius='999px'),
-                    bg=rx.color('green', 3), width='100%', height='12px', border_radius='999px', overflow='hidden'
+                    rx.box(width=export_width, height=bar_height, bg=rx.color('green', 9), border_radius='999px'),
+                    bg=rx.color('green', 3), width='100%', height=bar_height, border_radius='999px', overflow='hidden'
                 ),
                 rx.text(scale_text, size='2', color=rx.color('gray', 10)),
-                spacing='2', width='100%', align='stretch'
+                rx.hstack(
+                    rx.hstack(
+                        rx.box(width='10px', height='10px', border_radius='999px', bg=rx.color('blue', 9)),
+                        rx.text('Blue means power bought from the grid', size='2', color=rx.color('gray', 10)),
+                        spacing='2',
+                        align='center',
+                    ),
+                    rx.hstack(
+                        rx.box(width='10px', height='10px', border_radius='999px', bg=rx.color('green', 9)),
+                        rx.text('Green means power sent back to the grid', size='2', color=rx.color('gray', 10)),
+                        spacing='2',
+                        align='center',
+                    ),
+                    spacing='4',
+                    wrap='wrap',
+                    width='100%',
+                ),
+                spacing='3', width='100%', align='stretch'
             ),
-            spacing='3', align='stretch', width='100%'
+            spacing=inner_spacing, align='stretch', justify='start', width='100%'
         ),
-        size='3', border_radius='20px', width='100%', box_shadow='0 2px 12px rgba(15,23,42,0.04)'
+        size=size,
+        padding=body_padding,
+        border_radius='20px',
+        width='100%',
+        height='auto',
+        align_self='start',
+        box_shadow='0 2px 12px rgba(15,23,42,0.04)',
+    )
+
+
+def _capacity_step_block(step) -> rx.Component:
+    border = rx.cond(
+        step.status == "passed",
+        f"1px solid {rx.color('green', 6)}",
+        rx.cond(
+            step.status == "active",
+            f"1px solid {rx.color('amber', 7)}",
+            f"1px solid {rx.color('gray', 5)}",
+        ),
+    )
+    bg = rx.cond(
+        step.status == "passed",
+        rx.color('green', 3),
+        rx.cond(
+            step.status == "active",
+            rx.color('amber', 3),
+            rx.color('gray', 3),
+        ),
+    )
+    fill_bg = rx.cond(
+        step.status == "passed",
+        rx.color('green', 9),
+        rx.cond(
+            step.status == "active",
+            "linear-gradient(180deg, var(--amber-9), #f97316)",
+            rx.color('gray', 6),
+        ),
+    )
+    label_color = rx.cond(
+        step.status == "future",
+        rx.color('gray', 10),
+        rx.color('gray', 12),
+    )
+    price_color = rx.cond(
+        step.status == "future",
+        rx.color('gray', 9),
+        rx.color('gray', 11),
+    )
+    label_weight = rx.cond(step.status == "active", "bold", "medium")
+    badge = rx.cond(
+        step.status == "active",
+        rx.badge("Now", variant="soft", color_scheme="amber"),
+        rx.fragment(),
+    )
+    return rx.hstack(
+        rx.box(
+            rx.box(
+                width='100%',
+                height=step.fill_percent,
+                bg=fill_bg,
+                border_radius='8px',
+            ),
+            bg=bg,
+            border=border,
+            border_radius='10px',
+            height='34px',
+            width='52px',
+            overflow='hidden',
+            display='flex',
+            align_items='end',
+            justify_content='end',
+            box_shadow='inset 0 1px 0 rgba(255,255,255,0.06)',
+            flex_shrink='0',
+        ),
+        rx.vstack(
+            rx.hstack(
+                rx.text(step.label, size='2', color=label_color, weight=label_weight),
+                badge,
+                spacing='2',
+                width='100%',
+                wrap='wrap',
+            ),
+            rx.text(step.price_text, size='1', color=price_color),
+            spacing='1',
+            align='start',
+            width='100%',
+        ),
+        spacing='3',
+        align='center',
+        width='100%',
+    )
+
+
+def capacity_step_card(step_label, step_price_text, basis_kw_text, basis_text, warning_text, steps) -> rx.Component:
+    return rx.card(
+        rx.vstack(
+            rx.hstack(rx.icon(tag='gauge', size=18), rx.heading('Tensio Capacity Step', size='4'), align='center', spacing='2'),
+            rx.hstack(
+                rx.vstack(
+                    rx.text(step_label, size='6', weight='bold'),
+                    rx.text(step_price_text, size='2', color=rx.color('amber', 10), weight='medium'),
+                    rx.text(basis_kw_text, size='3', color=rx.color('gray', 11), weight='medium'),
+                    rx.text(basis_text, size='2', color=rx.color('gray', 10)),
+                    rx.text(warning_text, size='2', color=rx.color('gray', 10)),
+                    spacing='1',
+                    align='start',
+                    width='100%',
+                ),
+                rx.box(
+                    rx.vstack(
+                        rx.foreach(steps, _capacity_step_block),
+                        spacing='2',
+                        align='stretch',
+                        width='100%',
+                    ),
+                    min_width='182px',
+                    width='100%',
+                ),
+                spacing='4',
+                align='start',
+                width='100%',
+            ),
+            spacing='3',
+            align='stretch',
+            width='100%',
+        ),
+        size='3',
+        border_radius='20px',
+        width='100%',
+        box_shadow='0 2px 12px rgba(15,23,42,0.04)',
     )

@@ -4,4 +4,5 @@ from reflex.plugins.sitemap import SitemapPlugin
 config = Config(
     app_name='ams_han_reflex_app',
     disable_plugins=[SitemapPlugin],
+    show_built_with_reflex=False,
 )

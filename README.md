@@ -575,3 +575,9 @@ Possible next steps include:
 ## Author
 
 **Thor Elvin Valo**
+
+## License
+
+This project is licensed under the **MIT License**.
+
+See [LICENSE](LICENSE) for the full license text.

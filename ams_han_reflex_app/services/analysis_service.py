@@ -29,8 +29,13 @@ class AnalysisService:
     def history_rows(self, records: list[HistoryRecord]) -> list[HistoryTableRow]:
         return history_rows(records)
 
-    def analysis_summary(self, records: list[HistoryRecord]) -> AnalysisSummaryData:
-        return analysis_summary(records)
+    def analysis_summary(
+        self,
+        records: list[HistoryRecord],
+        *,
+        energy_records: list[HistoryRecord] | None = None,
+    ) -> AnalysisSummaryData:
+        return analysis_summary(records, energy_records_desc=energy_records)
 
     def phase_analysis(
         self,

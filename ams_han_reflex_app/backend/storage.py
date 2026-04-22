@@ -108,6 +108,23 @@ class SnapshotStore:
             rows = con.execute("SELECT * FROM snapshots ORDER BY id DESC").fetchall()
         return [self._row_to_record(row) for row in rows]
 
+    def get_since_meter_time(self, since_text: str, limit: int = 0) -> list[HistoryRecord]:
+        query = """
+            SELECT *
+            FROM snapshots
+            WHERE meter_timestamp >= ?
+            ORDER BY meter_timestamp DESC, id DESC
+        """
+        params: tuple[object, ...]
+        if limit > 0:
+            query += "\nLIMIT ?"
+            params = (since_text, limit)
+        else:
+            params = (since_text,)
+        with self._connect() as con:
+            rows = con.execute(query, params).fetchall()
+        return [self._row_to_record(row) for row in rows]
+
     def get_summary(self, limit: int = 500) -> HistorySummary:
         with self._connect() as con:
             row = con.execute(

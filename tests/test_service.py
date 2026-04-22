@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ams_han_reflex_app import service as service_module
 from ams_han_reflex_app.domain.pricing import PriceQuote
-from ams_han_reflex_app.support.replay_player import normalize_replay_line
 
 
 class _ConnectedSerial:
@@ -46,6 +45,18 @@ class _FallbackPriceProvider(_FixedPriceProvider):
             fallback_used=True,
             warning_text="Live spot price unavailable. Using explicit fallback estimate 1.000 NOK/kWh.",
         )
+
+
+FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+
+
+def _play_replay_fixture(svc: service_module.GatewayService, fixture_name: str, *, chunk_size: int = 16) -> tuple[str, str]:
+    fixture_lines = (FIXTURE_DIR / fixture_name).read_text(encoding="utf-8").splitlines()
+    load_message = svc.load_replay_lines(fixture_lines, source_name=fixture_name)
+    start_message = svc.start_replay()
+    while svc.advance_replay(chunk_size):
+        pass
+    return load_message, start_message
 
 
 class GatewayServiceTest(unittest.TestCase):
@@ -112,11 +123,7 @@ class GatewayServiceTest(unittest.TestCase):
                 Path(temp_dir) / "history.sqlite3",
                 price_provider=_FixedPriceProvider(),
             )
-            fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "demo_session.log"
-            for raw_line in fixture_path.read_text(encoding="utf-8").splitlines():
-                line = normalize_replay_line(raw_line)
-                if line:
-                    svc._on_line(line)
+            _play_replay_fixture(svc, "demo_session.log")
 
             self.assertGreater(svc.get_summary(100).count, 0)
 
@@ -149,6 +156,24 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(stored, 100)
             self.assertEqual(svc.settings.heatmap_switch_threshold, 100)
 
+    def test_dashboard_sync_data_exposes_ui_facing_snapshot_without_direct_state_access(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
+            svc.connection_status = "Connected to COM4"
+            svc.set_show_advanced(True)
+            svc.set_baudrate(9600)
+
+            snapshot = svc.dashboard_sync_data()
+
+            self.assertEqual(snapshot.connection_status, "Connected to COM4")
+            self.assertTrue(snapshot.show_advanced)
+            self.assertEqual(snapshot.baudrate, 9600)
+            self.assertEqual(snapshot.device_id, "-")
+            self.assertEqual(snapshot.snapshot_meter, "-")
+            self.assertEqual(snapshot.auto_connect_message, "Searching for gateway...")
+
     def test_wifi_and_mqtt_commands_use_escaped_protocol(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(
             service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
@@ -164,7 +189,7 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(sent[0], r"SET_WIFI,My\,SSID,pa\\ss\,word")
             self.assertEqual(sent[1], r"SET_MQTT,broker\,internal,1883,u\,ser,se\\cret,ams\,han")
 
-    def test_fixture_workflow_builds_history_cost_and_heatmap_views(self):
+    def test_demo_replay_workflow_builds_history_cost_and_heatmap_views(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(
             service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
         ):
@@ -172,19 +197,18 @@ class GatewayServiceTest(unittest.TestCase):
                 Path(temp_dir) / "history.sqlite3",
                 price_provider=_FixedPriceProvider(),
             )
-            fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "demo_session.log"
-            for raw_line in fixture_path.read_text(encoding="utf-8").splitlines():
-                line = normalize_replay_line(raw_line)
-                if line:
-                    svc._on_line(line)
+            load_message, start_message = _play_replay_fixture(svc, "demo_session.log")
 
             summary = svc.get_summary(200)
             cost = svc.cost_summary(12000)
             heatmaps = svc.load_heatmaps(4000, switch_threshold_w=300.0)
 
+            self.assertEqual(load_message, "Replay loaded: demo_session.log")
+            self.assertEqual(start_message, "Replay playing: demo_session.log")
             self.assertEqual(svc.wifi_status.state, "CONNECTED")
             self.assertEqual(svc.mqtt_status.state, "IDLE")
             self.assertIsNotNone(svc.device_info)
+            self.assertEqual(svc.replay_summary()["status_text"], "Finished")
             self.assertGreater(summary.count, 0)
             self.assertEqual(cost.warning_text, "")
             self.assertTrue(isinstance(cost.rows, list))

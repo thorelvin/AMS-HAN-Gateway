@@ -55,6 +55,16 @@ class HistoryService:
             return list(self.replay_records)
         return self.store.get_all()
 
+    def records_since_meter_time(self, since: datetime, limit: int = 0) -> list[HistoryRecord]:
+        if self.replay_records:
+            rows = [
+                record
+                for record in self.replay_records
+                if (dt := parse_meter_dt(record.snapshot.timestamp)) is not None and dt >= since
+            ]
+            return rows[:limit] if limit > 0 else rows
+        return self.store.get_since_meter_time(since.strftime("%Y-%m-%d %H:%M:%S"), limit)
+
     def summary(self, limit: int = 500) -> HistorySummary:
         if not self.replay_records:
             return self.store.get_summary(limit)

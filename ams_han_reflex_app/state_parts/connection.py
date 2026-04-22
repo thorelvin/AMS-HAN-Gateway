@@ -63,18 +63,9 @@ class DashboardConnectionState:
         self.sync_from_service(force_heavy=False)
         self.refresh_live_metrics()
         self.refresh_tab_data()
-        if _service().serial.connected:
-            self.auto_connect_message = _service().connection_status
-        elif _service().replay_summary().get("loaded"):
-            self.auto_connect_message = "Replay loaded"
-        else:
-            self.auto_connect_message = "Searching for gateway..."
 
     def live_tick(self, _moment_value: str = ""):
-        if _service().replay_summary().get("active"):
-            _service().advance_replay()
-        else:
-            _service().auto_reconnect_if_needed(int(self.baudrate or "115200"))
+        _service().tick_runtime(int(self.baudrate or "115200"))
         self._slow_counter += 1
         if self._slow_counter % 9 == 0:
             self.refresh_ports()
@@ -85,67 +76,54 @@ class DashboardConnectionState:
             self.refresh_tab_data()
 
     def sync_from_service(self, force_heavy: bool = False):
-        service = _service()
-        self.connection_status = service.connection_status
-        self.mains_network_type = service.mains_network_type
-        self.show_advanced = bool(service.settings.show_advanced)
-        self.baudrate = str(service.settings.baudrate)
-        self.replay_path = str(service.settings.replay_path)
-        self.db_path = str(service.db_path)
-        self.price_area = str(service.settings.price_area)
-        self.grid_day_rate = str(service.settings.grid_day_rate)
-        self.grid_night_rate = str(service.settings.grid_night_rate)
-        self.heatmap_switch_threshold = str(service.settings.heatmap_switch_threshold)
-        preferred = service.preferred_port_label()
-        if preferred:
-            self.selected_port = preferred
-        if service.device_info is not None:
-            self.device_id = service.device_info.device_id
-            self.firmware = service.device_info.fw_version
-            self.mac = service.device_info.mac
-        self.wifi_state = service.wifi_status.state
-        self.wifi_ip = service.wifi_status.ip
-        self.mqtt_state = service.mqtt_status.state
-        self.last_frame = f"seq={service.last_frame_seq}, len={service.last_frame_len}"
-
-        snap = service.snapshot_dict()
-        self.snapshot_meter = snap["meter"]
-        self.snapshot_meter_time = snap["meter_time"]
-        self.snapshot_power = snap["power"]
-        self.snapshot_grid_flow = snap["grid_flow"]
-        self.snapshot_reactive = snap["reactive"]
-        self.snapshot_voltage = snap["voltage"]
-        self.snapshot_current = snap["current"]
-        self.snapshot_power_factor = snap["power_factor"]
-        self.snapshot_counters = snap["counters"]
-        self.snapshot_stats = snap["stats"]
-
-        overview = service.unified_overview()
-        self.overview_title = overview["title"]
-        self.overview_value = overview["value"]
-        self.overview_subtitle = overview["subtitle"]
-        self.overview_accent = overview["accent"]
-
-        bars = service.import_export_bar()
-        self.import_bar_width = bars["import_width"]
-        self.export_bar_width = bars["export_width"]
-        self.import_bar_text = bars["import_text"]
-        self.export_bar_text = bars["export_text"]
-        self.bar_scale_text = bars["scale_text"]
-
-        self.stale_snapshot = (
-            service.has_cached_snapshot()
-            and not service.serial.connected
-            and not service.replay_summary().get("loaded")
-        )
-        replay = service.replay_summary()
-        self.replay_loaded = bool(replay["loaded"])
-        self.replay_active = bool(replay["active"])
-        self.replay_paused = bool(replay["paused"])
-        self.replay_status_text = str(replay["status_text"])
-        self.replay_progress_text = str(replay["progress_text"])
-        self.replay_source_text = str(replay["source_name"] or "-")
-        self.logs = service.logs_list()
+        snapshot = _service().dashboard_sync_data()
+        self.connection_status = snapshot.connection_status
+        self.mains_network_type = snapshot.mains_network_type
+        self.show_advanced = snapshot.show_advanced
+        self.baudrate = str(snapshot.baudrate)
+        self.replay_path = snapshot.replay_path
+        self.db_path = snapshot.db_path
+        self.price_area = str(snapshot.price_area)
+        self.grid_day_rate = str(snapshot.grid_day_rate)
+        self.grid_night_rate = str(snapshot.grid_night_rate)
+        self.heatmap_switch_threshold = str(snapshot.heatmap_switch_threshold)
+        if snapshot.preferred_port_label:
+            self.selected_port = snapshot.preferred_port_label
+        self.device_id = snapshot.device_id
+        self.firmware = snapshot.firmware
+        self.mac = snapshot.mac
+        self.wifi_state = snapshot.wifi_state
+        self.wifi_ip = snapshot.wifi_ip
+        self.mqtt_state = snapshot.mqtt_state
+        self.last_frame = snapshot.last_frame
+        self.snapshot_meter = snapshot.snapshot_meter
+        self.snapshot_meter_time = snapshot.snapshot_meter_time
+        self.snapshot_power = snapshot.snapshot_power
+        self.snapshot_grid_flow = snapshot.snapshot_grid_flow
+        self.snapshot_reactive = snapshot.snapshot_reactive
+        self.snapshot_voltage = snapshot.snapshot_voltage
+        self.snapshot_current = snapshot.snapshot_current
+        self.snapshot_power_factor = snapshot.snapshot_power_factor
+        self.snapshot_counters = snapshot.snapshot_counters
+        self.snapshot_stats = snapshot.snapshot_stats
+        self.overview_title = snapshot.overview_title
+        self.overview_value = snapshot.overview_value
+        self.overview_subtitle = snapshot.overview_subtitle
+        self.overview_accent = snapshot.overview_accent
+        self.import_bar_width = snapshot.import_bar_width
+        self.export_bar_width = snapshot.export_bar_width
+        self.import_bar_text = snapshot.import_bar_text
+        self.export_bar_text = snapshot.export_bar_text
+        self.bar_scale_text = snapshot.bar_scale_text
+        self.stale_snapshot = snapshot.stale_snapshot
+        self.replay_loaded = snapshot.replay_loaded
+        self.replay_active = snapshot.replay_active
+        self.replay_paused = snapshot.replay_paused
+        self.replay_status_text = snapshot.replay_status_text
+        self.replay_progress_text = snapshot.replay_progress_text
+        self.replay_source_text = snapshot.replay_source_text
+        self.auto_connect_message = snapshot.auto_connect_message
+        self.logs = snapshot.logs
         if force_heavy:
             self.refresh_live_metrics()
             self.refresh_tab_data()

@@ -24,15 +24,15 @@ class HeatmapCell:
     secondary: str
     tertiary: str
     bg: str
-    light_bg: str
-    border: str
-    light_border: str
-    text_color: str
-    light_text_color: str
-    secondary_color: str
-    light_secondary_color: str
-    duration_text: str
-    tooltip: str
+    light_bg: str = ''
+    border: str = ''
+    light_border: str = ''
+    text_color: str = '#f8fafc'
+    light_text_color: str = '#0f172a'
+    secondary_color: str = '#cbd5e1'
+    light_secondary_color: str = '#334155'
+    duration_text: str = ''
+    tooltip: str = ''
 
 
 @dataclass
@@ -65,6 +65,12 @@ class AnalysisSummaryData:
     signed_avg_text: str
     current_hour_text: str
     projected_hour_text: str
+    hour_energy_text: str
+    hour_energy_detail_text: str
+    day_energy_text: str
+    day_energy_detail_text: str
+    week_energy_text: str
+    week_energy_detail_text: str
     import_peak_text: str
     export_peak_text: str
     import_samples_text: str
@@ -163,13 +169,13 @@ def import_export_bar(snapshot, records_desc) -> dict[str, str]:
         peak = max(peak, r.snapshot.import_w, r.snapshot.export_w)
     peak = max(peak, 1.0)
     if snapshot is None:
-        return {'import_width':'0%','export_width':'0%','import_text':'Import 0.0 W','export_text':'Export 0.0 W','scale_text':'No recent peak yet'}
+        return {'import_width':'0%','export_width':'0%','import_text':'0.0 W','export_text':'0.0 W','scale_text':'No recent peak yet'}
     return {
         'import_width': f"{min(100.0, 100.0 * snapshot.import_w/peak):.1f}%",
         'export_width': f"{min(100.0, 100.0 * snapshot.export_w/peak):.1f}%",
-        'import_text': f'Import {snapshot.import_w:.1f} W',
-        'export_text': f'Export {snapshot.export_w:.1f} W',
-        'scale_text': f'Relative to recent peak {peak:.0f} W',
+        'import_text': f'{snapshot.import_w:.1f} W',
+        'export_text': f'{snapshot.export_w:.1f} W',
+        'scale_text': f'Compared with your recent peak of {peak:.0f} W',
     }
 
 
@@ -195,12 +201,105 @@ def history_rows(records_desc: list[Any]) -> list[HistoryTableRow]:
     return rows
 
 
-def analysis_summary(records_desc: list[Any]) -> AnalysisSummaryData:
+@dataclass(slots=True)
+class EnergyWindowSummary:
+    import_kwh: float = 0.0
+    export_kwh: float = 0.0
+
+    @property
+    def net_kwh(self) -> float:
+        return self.export_kwh - self.import_kwh
+
+    @property
+    def net_import_kwh(self) -> float:
+        return self.import_kwh - self.export_kwh
+
+
+def _format_avg_flow_text(signed_w: float, *, context: str = "") -> str:
+    suffix = f" {context}" if context else ""
+    if signed_w > 50.0:
+        return f"{abs(signed_w) / 1000.0:.2f} kW avg export{suffix}"
+    if signed_w < -50.0:
+        return f"{abs(signed_w) / 1000.0:.2f} kW avg import{suffix}"
+    return f"0.00 kW near balanced{suffix}"
+
+
+def _format_projected_hour_text(signed_w: float) -> str:
+    projected_kwh = abs(signed_w) / 1000.0
+    if signed_w > 50.0:
+        return f"{projected_kwh:.2f} kWh export projected this hour"
+    if signed_w < -50.0:
+        return f"{projected_kwh:.2f} kWh import projected this hour"
+    return "0.00 kWh near-balanced projection"
+
+
+def _format_net_energy_text(window: EnergyWindowSummary, *, context: str) -> str:
+    net_import_kwh = window.net_import_kwh
+    if net_import_kwh > 0.01:
+        return f"{net_import_kwh:.2f} kWh net import {context}"
+    if net_import_kwh < -0.01:
+        return f"{abs(net_import_kwh):.2f} kWh net export {context}"
+    return f"0.00 kWh near balanced {context}"
+
+
+def _format_energy_detail_text(window: EnergyWindowSummary, extra: str = "") -> str:
+    detail = f"Import {window.import_kwh:.2f} | Export {window.export_kwh:.2f} kWh"
+    if extra:
+        return f"{detail} | {extra}"
+    return detail
+
+
+def _integrated_energy_windows(records_desc: list[Any], latest_dt: datetime | None) -> tuple[EnergyWindowSummary, EnergyWindowSummary, EnergyWindowSummary]:
+    if latest_dt is None:
+        empty = EnergyWindowSummary()
+        return empty, empty, empty
+
+    hour_start = latest_dt.replace(minute=0, second=0, microsecond=0)
+    day_start = latest_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = (day_start - timedelta(days=latest_dt.weekday()))
+
+    hour_window = EnergyWindowSummary()
+    day_window = EnergyWindowSummary()
+    week_window = EnergyWindowSummary()
+
+    prev_dt = None
+    prev_snapshot = None
+    for record in reversed(records_desc):
+        dt = parse_meter_dt(record.snapshot.timestamp)
+        if dt is None:
+            continue
+        if prev_dt is not None and prev_snapshot is not None:
+            delta_h = max(0.0, (dt - prev_dt).total_seconds() / 3600.0)
+            if 0.0 < delta_h < 0.5:
+                import_kwh = (prev_snapshot.import_w / 1000.0) * delta_h
+                export_kwh = (prev_snapshot.export_w / 1000.0) * delta_h
+                if prev_dt >= week_start:
+                    week_window.import_kwh += import_kwh
+                    week_window.export_kwh += export_kwh
+                if prev_dt >= day_start:
+                    day_window.import_kwh += import_kwh
+                    day_window.export_kwh += export_kwh
+                if prev_dt >= hour_start:
+                    hour_window.import_kwh += import_kwh
+                    hour_window.export_kwh += export_kwh
+        prev_dt = dt
+        prev_snapshot = record.snapshot
+
+    return hour_window, day_window, week_window
+
+
+def analysis_summary(records_desc: list[Any], energy_records_desc: list[Any] | None = None) -> AnalysisSummaryData:
     if not records_desc:
         return AnalysisSummaryData(
-            signed_avg_text='0.0 W signed avg',
-            current_hour_text='0.0 W current hour avg',
-            projected_hour_text='0.00 kWh projected hour',
+            signed_avg_text='0.00 kW near balanced',
+            current_hour_text='0.00 kW near balanced this hour',
+            projected_hour_text='0.00 kWh near-balanced projection',
+            hour_energy_text='0.00 kWh near balanced this hour',
+            hour_energy_detail_text='Import 0.00 | Export 0.00 kWh',
+            day_energy_text='0.00 kWh near balanced today',
+            day_energy_detail_text='Import 0.00 | Export 0.00 kWh',
+            week_energy_text='0.00 kWh near balanced this week',
+            week_energy_detail_text='Import 0.00 | Export 0.00 kWh',
             import_peak_text='0.0 W peak import',
             export_peak_text='0.0 W peak export',
             import_samples_text='0 import samples',
@@ -211,13 +310,19 @@ def analysis_summary(records_desc: list[Any]) -> AnalysisSummaryData:
     latest_dt = parse_meter_dt(records_desc[0].snapshot.timestamp)
     current_hour_vals = [signed_grid_w(r.snapshot) for r in records_desc if latest_dt and parse_meter_dt(r.snapshot.timestamp) and parse_meter_dt(r.snapshot.timestamp).strftime('%Y-%m-%d %H') == latest_dt.strftime('%Y-%m-%d %H')]
     current_hour_avg = mean(current_hour_vals) if current_hour_vals else 0.0
-    projected_kwh = abs(current_hour_avg)/1000.0
+    hour_window, day_window, week_window = _integrated_energy_windows(energy_records_desc or records_desc, latest_dt)
     import_peak=max((r.snapshot.import_w for r in records_desc), default=0.0)
     export_peak=max((r.snapshot.export_w for r in records_desc), default=0.0)
     return AnalysisSummaryData(
-        signed_avg_text=f'{signed_avg:.1f} W signed avg',
-        current_hour_text=f'{current_hour_avg:.1f} W current hour avg',
-        projected_hour_text=f'{projected_kwh:.2f} kWh projected hour',
+        signed_avg_text=_format_avg_flow_text(signed_avg),
+        current_hour_text=_format_avg_flow_text(current_hour_avg, context='this hour'),
+        projected_hour_text=_format_projected_hour_text(current_hour_avg),
+        hour_energy_text=_format_net_energy_text(hour_window, context='this hour'),
+        hour_energy_detail_text=_format_energy_detail_text(hour_window, extra=_format_projected_hour_text(current_hour_avg)),
+        day_energy_text=_format_net_energy_text(day_window, context='today'),
+        day_energy_detail_text=_format_energy_detail_text(day_window),
+        week_energy_text=_format_net_energy_text(week_window, context='this week'),
+        week_energy_detail_text=_format_energy_detail_text(week_window),
         import_peak_text=f'{import_peak:.1f} W peak import',
         export_peak_text=f'{export_peak:.1f} W peak export',
         import_samples_text=f"{sum(1 for r in records_desc if r.snapshot.import_w>0)} import samples",

@@ -3,23 +3,20 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from .backend.models import CostSummaryData, DeviceInfo, GatewaySettings, HistorySummary, MqttStatus, ParsedLine, SnapshotEvent, StatusLine, WifiStatus
-from .backend.protocol import build_command, mask_sensitive_command, parse_line
+from .backend.models import CostSummaryData, DashboardSyncData, DeviceInfo, GatewaySettings, HistorySummary, MqttStatus, ParsedLine, SnapshotEvent, StatusLine, WifiStatus
+from .backend.protocol import build_command, mask_sensitive_command
 from .backend.serial_worker import SerialManager
 from .backend.storage import SnapshotStore
 from .domain.analysis import (
     import_export_bar, parse_meter_dt, signed_grid_w, unified_overview,
 )
-from .domain.event_engine import EventEngineV2
-from .domain.frame_parser import parse_kfm001_frame
-from .domain.mains import DEFAULT_MAINS_NETWORK_TYPE, classify_phase_delta, normalize_mains_network_type, parse_phase_delta_text
-from .domain.pricing import GRID_DAY_RATE_NOK_PER_KWH, GRID_NIGHT_RATE_NOK_PER_KWH, PRICE_AREAS, PriceProvider
-from .domain.signatures import build_signature_rows, likely_device_hint
-from .services import AnalysisService, ConnectionService, CostService, HistoryService, ReplayService, SettingsService
+from .domain.mains import DEFAULT_MAINS_NETWORK_TYPE, normalize_mains_network_type
+from .domain.pricing import GRID_DAY_RATE_NOK_PER_KWH, GRID_NIGHT_RATE_NOK_PER_KWH, PriceProvider
+from .services import AnalysisService, ConnectionService, CostService, HistoryService, ReplayService, RuntimeService, SettingsService
 from .support.event_log_store import EventLogStore
 from .support.replay_player import ReplayPlayer
 from .support.settings_store import SettingsStore
@@ -46,25 +43,17 @@ class GatewayService:
         self.settings_service = SettingsService(settings_store or SettingsStore(default_settings_path(), DEFAULT_SETTINGS))
         self.settings = self.settings_service.settings
         self.event_log_store = event_log_store or EventLogStore(self.settings_service.directory/'event_log.json')
+        self.runtime_service = RuntimeService(
+            self.event_log_store,
+            mains_network_type=self.settings.mains_network_type,
+            selected_port=str(self.settings.last_port),
+            event_rows=self.event_log_store.load(),
+        )
         self.db_path = Path(self.settings.db_path or db_path)
         self.history_service = HistoryService(self.db_path, snapshot_store=snapshot_store)
         self.store = self.history_service.store
         self.serial = serial_manager or SerialManager(on_line=self._on_line, on_state=self._on_state)
         self.connection_service = ConnectionService(self.serial)
-        self.mains_network_type = normalize_mains_network_type(self.settings.mains_network_type)
-        self.connection_status='Searching for gateway'
-        self.selected_port=str(self.settings.last_port)
-        self.device_info: DeviceInfo | None = None
-        self.wifi_status = WifiStatus(state='DISCONNECTED', ip='')
-        self.mqtt_status = MqttStatus(state='IDLE')
-        self.latest_snapshot: SnapshotEvent | None = None
-        self.last_frame_seq = 0
-        self.last_frame_len = 0
-        self.latest_kfm_detail: dict[str, Any] | None = None
-        self.recent_phase_samples: deque[dict[str, Any]] = deque(maxlen=1200)
-        self.logs: deque[str] = deque(maxlen=1800)
-        self.event_log: deque[dict[str, str]] = deque(self.event_log_store.load(), maxlen=1200)
-        self.event_engine = EventEngineV2(mains_network_type=self.mains_network_type)
         self.analysis_service = AnalysisService()
         self.cost_service = CostService(self.history_service, price_provider=price_provider)
         self.price_provider = self.cost_service.price_provider
@@ -76,10 +65,122 @@ class GatewayService:
         self._data_epoch=0; self._event_epoch=0; self._settings_epoch=0; self._cache={}
 
     def _timestamp(self) -> str:
-        return datetime.now().strftime('%H:%M:%S')
+        return self.runtime_service._timestamp()
 
     def _append_log(self, level: str, line: str) -> None:
-        self.logs.appendleft(f'[{self._timestamp()}] {level}: {line}')
+        self.runtime_service.append_log(level, line)
+
+    @property
+    def mains_network_type(self) -> str:
+        return self.runtime_service.state.mains_network_type
+
+    @mains_network_type.setter
+    def mains_network_type(self, value: str) -> None:
+        self.runtime_service.state.mains_network_type = value
+
+    @property
+    def connection_status(self) -> str:
+        return self.runtime_service.state.connection_status
+
+    @connection_status.setter
+    def connection_status(self, value: str) -> None:
+        self.runtime_service.state.connection_status = value
+
+    @property
+    def selected_port(self) -> str:
+        return self.runtime_service.state.selected_port
+
+    @selected_port.setter
+    def selected_port(self, value: str) -> None:
+        self.runtime_service.state.selected_port = str(value)
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        return self.runtime_service.state.device_info
+
+    @device_info.setter
+    def device_info(self, value: DeviceInfo | None) -> None:
+        self.runtime_service.state.device_info = value
+
+    @property
+    def wifi_status(self) -> WifiStatus:
+        return self.runtime_service.state.wifi_status
+
+    @wifi_status.setter
+    def wifi_status(self, value: WifiStatus) -> None:
+        self.runtime_service.state.wifi_status = value
+
+    @property
+    def mqtt_status(self) -> MqttStatus:
+        return self.runtime_service.state.mqtt_status
+
+    @mqtt_status.setter
+    def mqtt_status(self, value: MqttStatus) -> None:
+        self.runtime_service.state.mqtt_status = value
+
+    @property
+    def latest_snapshot(self) -> SnapshotEvent | None:
+        return self.runtime_service.state.latest_snapshot
+
+    @latest_snapshot.setter
+    def latest_snapshot(self, value: SnapshotEvent | None) -> None:
+        self.runtime_service.state.latest_snapshot = value
+
+    @property
+    def last_frame_seq(self) -> int:
+        return self.runtime_service.state.last_frame_seq
+
+    @last_frame_seq.setter
+    def last_frame_seq(self, value: int) -> None:
+        self.runtime_service.state.last_frame_seq = int(value)
+
+    @property
+    def last_frame_len(self) -> int:
+        return self.runtime_service.state.last_frame_len
+
+    @last_frame_len.setter
+    def last_frame_len(self, value: int) -> None:
+        self.runtime_service.state.last_frame_len = int(value)
+
+    @property
+    def latest_kfm_detail(self) -> dict[str, Any] | None:
+        return self.runtime_service.state.latest_kfm_detail
+
+    @latest_kfm_detail.setter
+    def latest_kfm_detail(self, value: dict[str, Any] | None) -> None:
+        self.runtime_service.state.latest_kfm_detail = value
+
+    @property
+    def recent_phase_samples(self) -> deque[dict[str, Any]]:
+        return self.runtime_service.state.recent_phase_samples
+
+    @recent_phase_samples.setter
+    def recent_phase_samples(self, value: deque[dict[str, Any]]) -> None:
+        self.runtime_service.state.recent_phase_samples = value
+
+    @property
+    def logs(self) -> deque[str]:
+        return self.runtime_service.state.logs
+
+    @logs.setter
+    def logs(self, value: deque[str]) -> None:
+        self.runtime_service.state.logs = value
+
+    @property
+    def event_log(self) -> deque[dict[str, str]]:
+        return self.runtime_service.state.event_log
+
+    @event_log.setter
+    def event_log(self, value: deque[dict[str, str]]) -> None:
+        self.runtime_service.state.event_log = value
+
+    @property
+    def event_engine(self):
+        return self.runtime_service.event_engine
+
+    @event_engine.setter
+    def event_engine(self, value) -> None:
+        self.runtime_service.event_engine = value
 
     def _cache_key(self, name: str, *parts: Any) -> tuple[Any,...]:
         return (name, self._data_epoch, self._event_epoch, self._settings_epoch, *parts)
@@ -104,74 +205,26 @@ class GatewayService:
         self._invalidate_settings_cache()
 
     def _save_event_log(self, force: bool=False):
-        if force: self.event_log_store.flush(list(self.event_log))
-        else: self.event_log_store.flush_if_needed(list(self.event_log))
+        self.runtime_service.save_event_log(force=force)
 
     @staticmethod
     def _parse_event_delta_w(event: dict[str, Any]) -> float | None:
-        raw = event.get('dW', event.get('delta_signed'))
-        if raw in (None, '', '-'):
-            return None
-        try:
-            return float(str(raw).replace('W', '').strip())
-        except ValueError:
-            return None
+        return RuntimeService.parse_event_delta_w(event)
 
     @staticmethod
     def _port_from_label(label: str) -> str:
         return ConnectionService.extract_port_name(label)
 
     def _reclassify_event_log_for_mains(self) -> None:
-        session_start_info: dict[str, tuple[str, str]] = {}
-        for event in self.event_log:
-            if str(event.get('category', '') or '') != 'power':
-                continue
-            if str(event.get('type', event.get('event_type', '')) or '') != 'load_session_start':
-                continue
-            parsed = parse_phase_delta_text(event.get('phase_delta'))
-            if parsed is None:
-                continue
-            phase = classify_phase_delta(parsed[0], parsed[1], parsed[2], self.mains_network_type)
-            delta_w = self._parse_event_delta_w(event) or 0.0
-            note = likely_device_hint(delta_w, phase, sustained=True, mains_network_type=self.mains_network_type)
-            event['phase'] = phase
-            event['summary'] = f'Load session start {delta_w:+.0f} W on {phase}'
-            event['note'] = note
-            session_start_info[str(event.get('time', '-') or '-')] = (phase, note)
-
-        for event in self.event_log:
-            category = str(event.get('category', '') or '')
-            parsed = parse_phase_delta_text(event.get('phase_delta'))
-            if parsed is None or category not in ('power', 'phase'):
-                continue
-            phase = classify_phase_delta(parsed[0], parsed[1], parsed[2], self.mains_network_type)
-            event['phase'] = phase
-            if category != 'power':
-                continue
-            event_type = str(event.get('type', event.get('event_type', '')) or '')
-            delta_w = self._parse_event_delta_w(event) or 0.0
-            if event_type == 'load_session_start':
-                continue
-            elif event_type == 'load_session_end':
-                start_text = str(event.get('note', '') or '')
-                start_text = start_text[16:35] if start_text.startswith('Session started ') and len(start_text) >= 35 else '-'
-                event['summary'] = f'Load session ended on {phase}'
-                signature_note = session_start_info.get(start_text, (phase, likely_device_hint(delta_w, phase, mains_network_type=self.mains_network_type)))[1]
-                event['note'] = f'Session started {start_text} ({signature_note})'
-            elif event_type == 'power_step':
-                direction = 'Export step' if delta_w > 0 else 'Import step'
-                event['summary'] = f'{direction} {delta_w:+.0f} W on {phase}'
-                event['note'] = likely_device_hint(delta_w, phase, mains_network_type=self.mains_network_type)
+        self.runtime_service._reclassify_event_log_for_mains()
 
     def set_mains_network_type(self, mains_network_type: str) -> None:
         normalized = normalize_mains_network_type(mains_network_type)
         if normalized == self.mains_network_type:
             return
-        self.mains_network_type = normalized
+        self.runtime_service.set_mains_network_type(normalized)
         self.settings.mains_network_type = normalized
         self._save_settings()
-        self.event_engine = EventEngineV2(mains_network_type=normalized)
-        self._reclassify_event_log_for_mains()
         self._save_event_log(force=True)
         self._invalidate_data_cache()
         self._invalidate_event_cache()
@@ -240,6 +293,12 @@ class GatewayService:
         self._last_probe_attempt = now
         self.auto_connect(baudrate)
 
+    def tick_runtime(self, baudrate: int) -> None:
+        if self.replay_service.summary().active:
+            self.advance_replay()
+        else:
+            self.auto_reconnect_if_needed(baudrate)
+
     def connect(self, port_label: str, baudrate: int):
         result = self.connection_service.connect(port_label, baudrate)
         self.connection_status = f'Connected to {result.option.port}'
@@ -287,9 +346,10 @@ class GatewayService:
 
     def _on_state(self, connected: bool, message: str):
         with self._lock:
-            self.connection_status = message
-            self._append_log('INFO', message)
-            self._invalidate_data_cache()
+            self.runtime_service.update_connection_state(
+                message,
+                invalidate_data_cache=self._invalidate_data_cache,
+            )
 
     def _history_records_desc(self, limit: int = 500):
         return self.history_service.records_desc(limit)
@@ -314,81 +374,42 @@ class GatewayService:
         self.history_service.record_snapshot(snap, replay_mode=self.replay_service.summary().loaded)
 
     def _snapshot_sample(self, snap: SnapshotEvent) -> dict[str, Any]:
-        detail = self.latest_kfm_detail or {}
-        return {
-            'timestamp': snap.timestamp,
-            'import_w': snap.import_w,
-            'export_w': snap.export_w,
-            'signed_grid_w': snap.export_w - snap.import_w,
-            'l1_a': snap.l1_a,
-            'l2_a': snap.l2_a,
-            'l3_a': snap.l3_a,
-            'l1_v': float(detail.get('l1_v', snap.avg_voltage_v)),
-            'l2_v': float(detail.get('l2_v', 0.0)),
-            'l3_v': float(detail.get('l3_v', snap.avg_voltage_v)),
-        }
+        return self.runtime_service._snapshot_sample(snap)
 
     def _apply_parsed(self, parsed: ParsedLine):
-        if parsed.kind == 'device_info':
-            self.device_info = parsed.payload
-        elif parsed.kind == 'wifi_status':
-            self.wifi_status = parsed.payload
-        elif parsed.kind == 'mqtt_status':
-            self.mqtt_status = parsed.payload
-        elif parsed.kind == 'status':
-            status = parsed.payload
-            if isinstance(status, StatusLine):
-                if status.category == 'WIFI':
-                    self.wifi_status = WifiStatus(state=status.state, ip=status.extra)
-                elif status.category == 'MQTT':
-                    self.mqtt_status = MqttStatus(state=status.state)
-                elif status.category == 'HAN' and status.extra:
-                    self._append_log('INFO', f'HAN status: {status.state} ({status.extra})')
-                elif status.category == 'HAN':
-                    self._append_log('INFO', f'HAN status: {status.state}')
-        elif parsed.kind == 'frame':
-            self.last_frame_seq = parsed.payload.sequence
-            self.last_frame_len = parsed.payload.length
-            detail = parse_kfm001_frame(parsed.payload.hex_payload)
-            if detail:
-                self.latest_kfm_detail = detail
-        elif parsed.kind == 'snapshot':
-            snap = parsed.payload
-            if self.latest_kfm_detail and self.latest_kfm_detail.get('meter_timestamp') == snap.timestamp:
-                # enrich avg voltage if better
-                snap.avg_voltage_v = float(self.latest_kfm_detail.get('avg_voltage_v', snap.avg_voltage_v))
-            self.latest_snapshot = snap
-            self._record_history(snap)
-            sample = self._snapshot_sample(snap)
-            previous = self.recent_phase_samples[-1] if self.recent_phase_samples else None
-            baseline = self._derive_baseline(snap.timestamp, self._history_records_desc(30)[1:])
-            self.recent_phase_samples.append(sample)
-            for event in self.event_engine.process_sample(sample, previous, baseline):
-                row = event.as_row()
-                self.event_log.appendleft(row)
-                self.event_log_store.mark_dirty()
-            self._save_event_log(False)
-        elif parsed.kind == 'parse_error':
-            self._append_log('WARN', parsed.error or f'Parse error: {parsed.raw}')
-        elif parsed.kind == 'error':
-            self._append_log('ERR', parsed.error or 'Protocol error')
-        self._invalidate_data_cache(); self._invalidate_event_cache()
+        self.runtime_service.apply_parsed(
+            parsed,
+            history_records_desc=self._history_records_desc,
+            record_history=self._record_history,
+            derive_baseline=self._derive_baseline,
+            invalidate_data_cache=self._invalidate_data_cache,
+            invalidate_event_cache=self._invalidate_event_cache,
+        )
 
     def _on_line(self, raw: str):
-        parsed = parse_line(raw)
         with self._lock:
-            self._append_log('RX', raw)
-            self._apply_parsed(parsed)
+            self.runtime_service.ingest_raw_line(
+                raw,
+                history_records_desc=self._history_records_desc,
+                record_history=self._record_history,
+                derive_baseline=self._derive_baseline,
+                invalidate_data_cache=self._invalidate_data_cache,
+                invalidate_event_cache=self._invalidate_event_cache,
+            )
 
     # Replay methods
     def _reset_live_buffers(self):
-        self.device_info=None; self.wifi_status=WifiStatus(state='DISCONNECTED',ip=''); self.mqtt_status=MqttStatus(state='IDLE')
-        self.latest_snapshot=None; self.last_frame_seq=0; self.last_frame_len=0; self.latest_kfm_detail=None
-        self.recent_phase_samples.clear(); self.event_engine=EventEngineV2(mains_network_type=self.mains_network_type); self._invalidate_data_cache(); self._invalidate_event_cache()
+        self.runtime_service.reset_live_buffers(
+            invalidate_data_cache=self._invalidate_data_cache,
+            invalidate_event_cache=self._invalidate_event_cache,
+        )
 
     def _clear_replay_runtime(self):
-        self.history_service.clear_replay()
-        self._reset_live_buffers()
+        self.runtime_service.clear_replay_runtime(
+            self.history_service.clear_replay,
+            invalidate_data_cache=self._invalidate_data_cache,
+            invalidate_event_cache=self._invalidate_event_cache,
+        )
 
     def load_replay_file(self, path: str) -> str:
         p = Path(path).expanduser()
@@ -482,6 +503,71 @@ class GatewayService:
             'progress_text': summary.progress_text,
         }
 
+    def dashboard_sync_data(self) -> DashboardSyncData:
+        replay = self.replay_summary()
+        snapshot = self.snapshot_dict()
+        overview = self.unified_overview()
+        bars = self.import_export_bar()
+        preferred = self.preferred_port_label()
+        auto_connect_message = "Searching for gateway..."
+        if self.serial.connected:
+            auto_connect_message = self.connection_status
+        elif replay["loaded"]:
+            auto_connect_message = "Replay loaded"
+        device_info = self.device_info
+        return DashboardSyncData(
+            connection_status=self.connection_status,
+            mains_network_type=self.mains_network_type,
+            show_advanced=bool(self.settings.show_advanced),
+            baudrate=int(self.settings.baudrate),
+            replay_path=str(self.settings.replay_path),
+            db_path=str(self.db_path),
+            price_area=str(self.settings.price_area),
+            grid_day_rate=float(self.settings.grid_day_rate),
+            grid_night_rate=float(self.settings.grid_night_rate),
+            heatmap_switch_threshold=int(self.settings.heatmap_switch_threshold),
+            preferred_port_label=preferred,
+            device_id=device_info.device_id if device_info is not None else "-",
+            firmware=device_info.fw_version if device_info is not None else "-",
+            mac=device_info.mac if device_info is not None else "-",
+            wifi_state=self.wifi_status.state,
+            wifi_ip=self.wifi_status.ip,
+            mqtt_state=self.mqtt_status.state,
+            last_frame=f"seq={self.last_frame_seq}, len={self.last_frame_len}",
+            snapshot_meter=snapshot["meter"],
+            snapshot_meter_time=snapshot["meter_time"],
+            snapshot_power=snapshot["power"],
+            snapshot_grid_flow=snapshot["grid_flow"],
+            snapshot_reactive=snapshot["reactive"],
+            snapshot_voltage=snapshot["voltage"],
+            snapshot_current=snapshot["current"],
+            snapshot_power_factor=snapshot["power_factor"],
+            snapshot_counters=snapshot["counters"],
+            snapshot_stats=snapshot["stats"],
+            overview_title=overview["title"],
+            overview_value=overview["value"],
+            overview_subtitle=overview["subtitle"],
+            overview_accent=overview["accent"],
+            import_bar_width=bars["import_width"],
+            export_bar_width=bars["export_width"],
+            import_bar_text=bars["import_text"],
+            export_bar_text=bars["export_text"],
+            bar_scale_text=bars["scale_text"],
+            stale_snapshot=(
+                self.has_cached_snapshot()
+                and not self.serial.connected
+                and not bool(replay["loaded"])
+            ),
+            replay_loaded=bool(replay["loaded"]),
+            replay_active=bool(replay["active"]),
+            replay_paused=bool(replay["paused"]),
+            replay_status_text=str(replay["status_text"]),
+            replay_progress_text=str(replay["progress_text"]),
+            replay_source_text=str(replay["source_name"] or "-"),
+            auto_connect_message=auto_connect_message,
+            logs=self.logs_list(),
+        )
+
     # Data accessors
     def logs_list(self, limit: int = 300) -> list[str]:
         return list(self.logs)[:limit]
@@ -507,7 +593,19 @@ class GatewayService:
         return self.history_service.summary(limit)
 
     def analysis_summary(self, limit: int = 1000):
-        return self.analysis_service.analysis_summary(self._history_records_desc(limit))
+        key = self._cache_key('analysis_summary', limit)
+
+        def _build():
+            recent_records = self._history_records_desc(limit)
+            latest_dt = parse_meter_dt(recent_records[0].snapshot.timestamp) if recent_records else None
+            energy_records = recent_records
+            if latest_dt is not None:
+                day_start = latest_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                week_start = day_start - timedelta(days=latest_dt.weekday())
+                energy_records = self.history_service.records_since_meter_time(week_start)
+            return self.analysis_service.analysis_summary(recent_records, energy_records=energy_records)
+
+        return self._cache_get_or_set(key, _build)
 
     def phase_analysis(self, limit: int = 300):
         return self.analysis_service.phase_analysis(
@@ -601,6 +699,10 @@ class GatewayService:
             night_rate=night,
             limit=limit,
         )
+
+    def capacity_estimate(self, limit: int = 12000):
+        key = self._cache_key('capacity_estimate', limit)
+        return self._cache_get_or_set(key, lambda: self.cost_service.capacity_estimate(limit))
 
     def clear_history(self):
         with self._lock:

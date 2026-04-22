@@ -15,6 +15,12 @@ class DashboardStateCompositionTest(unittest.TestCase):
         self.assertTrue(hasattr(DashboardState, "wifi_summary"))
         self.assertTrue(hasattr(DashboardState, "signature_assignment_text"))
 
+    def test_split_state_keeps_focused_refresh_modules(self):
+        self.assertTrue(hasattr(DashboardState, "refresh_history"))
+        self.assertTrue(hasattr(DashboardState, "refresh_diagnostics"))
+        self.assertTrue(hasattr(DashboardState, "refresh_cost"))
+        self.assertTrue(hasattr(DashboardState, "set_current_tab"))
+
 
 if __name__ == "__main__":
     unittest.main()
