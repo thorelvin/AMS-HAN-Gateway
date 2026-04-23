@@ -4,6 +4,12 @@ import reflex as rx
 
 
 def stat_card(title: str, value, icon: str, accent: str = 'indigo', subtitle=None) -> rx.Component:
+    value_node = value if isinstance(value, rx.Component) else rx.text(value, size='5', weight='bold')
+    subtitle_node = (
+        subtitle
+        if isinstance(subtitle, rx.Component)
+        else rx.text(subtitle, size='2', color=rx.color('gray', 10))
+    )
     return rx.card(
         rx.vstack(
             rx.hstack(
@@ -18,8 +24,8 @@ def stat_card(title: str, value, icon: str, accent: str = 'indigo', subtitle=Non
                 align='center',
                 spacing='3',
             ),
-            rx.text(value, size='5', weight='bold'),
-            rx.cond(subtitle is not None, rx.text(subtitle, size='2', color=rx.color('gray', 10)), rx.fragment()),
+            value_node,
+            rx.cond(subtitle is not None, subtitle_node, rx.fragment()),
             spacing='2',
             align='start',
             width='100%',
@@ -46,6 +52,21 @@ def hero_card(title, value, subtitle, accent: str = 'blue') -> rx.Component:
         size='4', border_radius='22px', width='100%',
         bg=f"linear-gradient(135deg, {rx.color(accent, 2)}, {rx.color('gray', 1)})",
         border=f"1px solid {rx.color(accent, 4)}",
+    )
+
+
+def brand_mark() -> rx.Component:
+    return rx.box(
+        rx.icon(tag='zap', size=36),
+        width='82px',
+        height='82px',
+        border_radius='22px',
+        display='flex',
+        align_items='center',
+        justify_content='center',
+        color='white',
+        bg='linear-gradient(145deg, #1d4ed8 0%, #0f766e 58%, #f59e0b 100%)',
+        flex_shrink='0',
     )
 
 

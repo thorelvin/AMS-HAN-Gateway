@@ -4,7 +4,7 @@ import reflex as rx
 
 from .app_context import configure_default_app_context
 from .app_meta import APP_AUTHOR, APP_NAME, APP_VERSION
-from .components import capacity_step_card, dual_bar_card, hero_card, hint_banner, kv, panel, stat_card
+from .components import brand_mark, capacity_step_card, dual_bar_card, hero_card, hint_banner, kv, panel, stat_card
 from .domain.pricing import PRICE_AREAS
 
 configure_default_app_context()
@@ -160,7 +160,7 @@ def advanced_sidebar() -> rx.Component:
                     placeholder="Choose a port",
                 ),
                 rx.text("Serial speed (baud)", size="2", color=rx.color("gray", 10)),
-                rx.input(value=DashboardState.baudrate, is_read_only=True),
+                rx.input(value=DashboardState.baudrate, read_only=True),
                 rx.hstack(
                     rx.button("Connect", on_click=DashboardState.connect, color_scheme="indigo"),
                     rx.button("Disconnect", on_click=DashboardState.disconnect, variant="soft"),
@@ -1089,20 +1089,28 @@ def index() -> rx.Component:
             rx.vstack(
                 live_heartbeat(),
                 rx.hstack(
-                    rx.vstack(
-                        rx.heading(APP_NAME, size="8"),
-                        rx.text(
-                            "Live dashboard for current power, usage patterns, costs, warnings, load signatures and replay.",
-                            color=rx.color("gray", 10),
+                    rx.hstack(
+                        brand_mark(),
+                        rx.vstack(
+                            rx.heading(APP_NAME, size="8", line_height="1.0"),
+                            rx.text(
+                                "Live dashboard for current power, usage patterns, costs, warnings, load signatures and replay.",
+                                color=rx.color("gray", 10),
+                            ),
+                            rx.hstack(
+                                rx.badge(f"Dashboard {APP_VERSION}", variant="soft", color_scheme="blue"),
+                                rx.badge(f"Author: {APP_AUTHOR}", variant="soft", color_scheme="gray"),
+                                spacing="2",
+                                wrap="wrap",
+                            ),
+                            spacing="1",
+                            align="start",
+                            justify="center",
+                            min_height="82px",
                         ),
-                        rx.hstack(
-                            rx.badge(f"Dashboard {APP_VERSION}", variant="soft", color_scheme="blue"),
-                            rx.badge(f"Author: {APP_AUTHOR}", variant="soft", color_scheme="gray"),
-                            spacing="2",
-                            wrap="wrap",
-                        ),
-                        spacing="1",
-                        align="start",
+                        spacing="3",
+                        align="center",
+                        padding_left="12px",
                     ),
                     rx.spacer(),
                     rx.hstack(
