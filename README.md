@@ -10,17 +10,18 @@ It is intended as a practical engineering project for understanding household im
 
 - ESP-IDF firmware scaffold for ESP32-WROOM-32D with UART2 HAN capture, NVS-backed config, MQTT publishing, and Home Assistant discovery republish
 - Auto-detects the gateway over serial and remembers the last working COM port
-- Live overview of import, export, signed grid flow, current hour, and projected hour
+- `Live View` dashboard with current power direction, import/export bars, capacity-step estimate, and hour/day/week energy rollups
 - Device and link status for gateway identity, firmware, Wi-Fi, MQTT, and last frame activity
-- Diagnostics for missing voltage channels, voltage sag, phase spread, power steps, and load sessions
-- Phase and voltage analysis with user-selectable `TN` or `IT` mains interpretation, imbalance focus, and worst-spread summaries
+- `Warnings` view for missing voltage channels, voltage sag, phase spread, power steps, and load sessions
+- `Power Patterns` analysis with user-selectable `TN` or `IT` mains interpretation, imbalance focus, and worst-spread summaries
 - Load Signatures that group recurring power changes into likely household-device patterns with representative watt size and duty-cycle hints
-- Heatmap analysis with time-weighted hourly buckets, weekday pattern view, thresholded phase-switch counts, and switching-activity gradient
+- `Usage Map` analysis with time-weighted hourly buckets, weekday pattern view, thresholded phase-switch counts, and switching-activity gradient
 - Local snapshot history with daily buckets, top-hour tracking, heatmaps, and event-signature summaries
 - Cost analysis with Norwegian price areas `NO1` to `NO5`, configurable grid rates, capacity estimation, and explicit spot-price fallback warnings
 - Replay and demo workflow for offline development, debugging, and scenario validation
 - Upload support for replay logs directly from the dashboard
 - Gateway control actions for `GET_INFO`, `GET_STATUS`, Wi-Fi setup, MQTT setup, and discovery republish
+- Light and dark theme support for the full dashboard
 
 ## Verified hardware setup
 
@@ -78,25 +79,25 @@ That helper installs the Python requirements and starts the Reflex dashboard fro
 
 ## Dashboard screenshots
 
-The screenshots below show the current interface and the main operator views available in the dashboard.
+The screenshots below show the current April 2026 interface and the main operator views available in the dashboard. Most examples use dark mode, while the main `Live View` screenshot below shows the alternative light theme.
 
-### Overview tab
+### Live View
 
-Live import/export overview, latest snapshot, quick actions, and gateway status:
+Current power direction, thicker import/export bars, capacity-step estimate, gateway health, and hour/day/week energy rollups:
 
-![Overview tab](docs/images/dashboard-overview.png)
+![Live View tab in light mode](docs/images/dashboard-live-view-light.png)
 
-### Analysis tab
+### Power Patterns
 
-Phase and voltage analysis together with load signatures and top-hour buckets:
+Phase and voltage summaries together with repeating-load detection, representative watt size, and duty-cycle hints:
 
-![Analysis tab](docs/images/dashboard-analysis.png)
+![Power Patterns tab](docs/images/dashboard-power-patterns.png)
 
-### Mains network selection
+### Electrical setup and replay tools
 
-The dashboard includes a `Mains network type` selector in the `Electrical Setup` area so the analysis matches the installation type.
+The advanced sidebar contains manual serial controls, `TN` or `IT` mains selection, and the replay/demo workflow used for offline troubleshooting and fixture-driven testing:
 
-![Electrical model selector](docs/images/dashboard-electrical-model.png)
+![Electrical setup and replay tools](docs/images/dashboard-electrical-setup.png)
 
 - **TN mode** treats most common 230 V appliance changes as `L1`, `L2`, or `L3` relative to neutral.
 - **IT mode** treats many 230 V appliance changes as conductor-pair activity such as `L1-L2`, `L1-L3`, or `L2-L3`.
@@ -113,7 +114,7 @@ The `Detected Repeating Loads` table, still built around the same Load Signature
 Each row represents a recurring pattern seen in the event engine:
 
 - **Signature** is the dashboard's best current description of the load behavior, such as a likely heater step, a single-phase appliance step, or a smaller background change.
-- **Phase** shows whether the pattern is mostly tied to `L1`, `L2`, `L3`, or is not yet phase-specific.
+- **Phase** shows whether the pattern is mostly tied to `L1`, `L2`, `L3`, `L1-L2`, `L1-L3`, `L2-L3`, or is not yet phase-specific.
 - **Typical W** gives the representative watt size of that signature, making it much easier to identify whether the change looks like a panel heater, water heater, kitchen appliance, EV-related load step, or a small background consumer.
 - **Detections** shows how many times that pattern has been observed.
 - **Avg Runtime** shows the average session length for signatures that produce clear start and end events.
@@ -133,46 +134,46 @@ Why this matters:
 - It adds routine analysis, so recurring loads can be understood not just by size but also by timing, duty cycle, and weekday-versus-weekend behavior.
 - It becomes more useful over time as the dashboard sees more repeated patterns in live traffic or replay logs.
 
-### Diagnostics tab
+### Warnings
 
-Suspected issues, health panel, and filtered event tracker for power, voltage, phase, and data-quality events:
+Current warnings, connection health, and the filtered event timeline for power, voltage, phase, and data-quality events:
 
-![Diagnostics tab](docs/images/dashboard-diagnostics.png)
+![Warnings tab](docs/images/dashboard-warnings.png)
 
-### Daily tab
+### Daily Use
 
-Daily load graph and hourly buckets for the latest meter day:
+Daily usage graph and hour-by-hour summary for the most recent day with data:
 
-![Daily tab](docs/images/dashboard-daily.png)
+![Daily Use tab](docs/images/dashboard-daily-use.png)
 
-### Heatmap tab
+### Usage Map
 
-The Heatmap tab turns stored history into a faster pattern-recognition view.
+The `Usage Map` tab turns stored history into a faster pattern-recognition view.
 
-![Heatmap tab](docs/images/dashboard-heatmap.png)
+![Usage Map tab](docs/images/dashboard-usage-map.png)
 
 It contains two related views:
 
-- **Recent Hourly Heatmap**
+- **Recent Days By Hour**
   One row per recent day, one column per hour. This is meant for spotting where the house was steadily importing, steadily exporting, or repeatedly switching loads during specific hours.
-- **Weekly Pattern Heatmap**
+- **Typical Weekday Pattern**
   The same hourly data collapsed into weekday rows. This makes repeated routines such as morning heating, daytime solar export, cooking peaks, EV charging windows, or night loads much easier to see.
 
-How to read each heatmap cell:
+How to read each usage-map cell:
 
 - The large number such as `-2.1 kW` or `+3.3 kW` is the **average net load for that hour**.
   Negative means import-dominant.
   Positive means export-dominant.
-- `L x/y/z` is the count of **load switches assigned to `L1/L2/L3`** in that hour.
+- `L x/y/z` is the count of **load switches assigned to the active mains model** for that hour.
+  In `TN` mode that means `L1/L2/L3`.
+  In `IT` mode that means `L1-L2/L1-L3/L2-L3`.
 - `3P n` is the count of **balanced 3-phase switch events** in that hour.
 - The **blue/green background** shows whether the hour was import-heavy or export-heavy overall.
 - The **corner accent** is hidden for quiet hours, then steps from **yellow** to **orange** to **red** as switching activity increases.
 
-If the dashboard is set to `IT` mode, the switch counters are assigned to `L1-L2`, `L1-L3`, and `L2-L3` instead of neutral-referenced `L1/L2/L3`.
+The `Minimum load change to count` dropdown controls which signed power changes are counted as switches. The default is `300 W`, but the user can raise or lower the threshold from `100 W` to `1500 W` depending on whether the goal is to catch small appliance changes or only larger load steps.
 
-The `Load switch threshold` dropdown controls which signed power changes are counted as switches. The default is `300 W`, but the user can raise or lower the threshold from `100 W` to `1500 W` depending on whether the goal is to catch small appliance changes or only larger load steps.
-
-The screenshot above shows the heatmap cards, the threshold selector, and both the recent-day and weekday-pattern views together in the current dashboard.
+The screenshot above shows the usage-map summary cards, the switch-threshold selector, and both the recent-day and weekday-pattern views together in the current dashboard.
 
 Why this matters:
 
@@ -181,29 +182,23 @@ Why this matters:
 - It helps separate steady background load from hours with active device cycling or rapid appliance changes.
 - It gives a practical bridge between phase analysis, Load Signatures, and cost/capacity planning.
 
-### Cost tab
+### Costs
 
-Price area, grid settings, hourly cost rows, and capacity estimate:
+Price area, live cost estimate, explicit price-warning handling, electricity price settings, and hourly cost breakdown:
 
-![Cost tab](docs/images/dashboard-cost.png)
+![Costs tab](docs/images/dashboard-costs.png)
 
-### History tab
+### History
 
 Stored snapshot history with averages, peaks, and local database context:
 
-![History tab](docs/images/dashboard-history.png)
+![History tab](docs/images/dashboard-history-current.png)
 
-### Log tab
+### Connection Log
 
 Serial and application log view showing `RSP`, `FRAME`, and `SNAP` traffic from the gateway:
 
-![Log tab](docs/images/dashboard-log.png)
-
-### Advanced tools
-
-Serial connection controls plus replay and demo workflow:
-
-![Advanced tools](docs/images/dashboard-advanced-tools.png)
+![Connection Log tab](docs/images/dashboard-connection-log.png)
 
 ## Professional relevance
 

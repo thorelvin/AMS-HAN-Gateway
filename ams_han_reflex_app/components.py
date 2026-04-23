@@ -109,7 +109,7 @@ def tiny_metric(title: str, value, accent: str = 'blue') -> rx.Component:
 
 
 def dual_bar_card(import_width, export_width, import_text, export_text, scale_text, compact: bool = False) -> rx.Component:
-    bar_height = '24px' if compact else '28px'
+    bar_height = '34px' if compact else '40px'
     size = '2' if compact else '3'
     inner_spacing = '4' if compact else '4'
     body_padding = '1.1em 1.1em' if compact else None
@@ -117,44 +117,80 @@ def dual_bar_card(import_width, export_width, import_text, export_text, scale_te
         rx.vstack(
             rx.hstack(rx.icon(tag='chart_column', size=18), rx.heading('Power Flow Now', size='4'), align='center', spacing='2'),
             rx.vstack(
-                rx.hstack(rx.text('From grid', size='2', color=rx.color('gray', 10)), rx.spacer(), rx.text(import_text, size='3', weight='medium'), width='100%'),
-                rx.box(
-                    rx.box(width=import_width, height=bar_height, bg=rx.color('blue', 9), border_radius='999px'),
-                    bg=rx.color('blue', 3), width='100%', height=bar_height, border_radius='999px', overflow='hidden'
-                ),
-                rx.hstack(rx.text('To grid', size='2', color=rx.color('gray', 10)), rx.spacer(), rx.text(export_text, size='3', weight='medium'), width='100%'),
-                rx.box(
-                    rx.box(width=export_width, height=bar_height, bg=rx.color('green', 9), border_radius='999px'),
-                    bg=rx.color('green', 3), width='100%', height=bar_height, border_radius='999px', overflow='hidden'
-                ),
-                rx.text(scale_text, size='2', color=rx.color('gray', 10)),
-                rx.hstack(
+                rx.vstack(
                     rx.hstack(
-                        rx.box(width='10px', height='10px', border_radius='999px', bg=rx.color('blue', 9)),
-                        rx.text('Blue means power bought from the grid', size='2', color=rx.color('gray', 10)),
-                        spacing='2',
-                        align='center',
+                        rx.text('From grid', size='2', color=rx.color('gray', 10)),
+                        rx.spacer(),
+                        rx.text(import_text, size='3', weight='medium'),
+                        width='100%',
+                    ),
+                    rx.box(
+                        rx.box(width=import_width, height=bar_height, bg=rx.color('blue', 9), border_radius='999px'),
+                        bg=rx.color('blue', 3),
+                        width='100%',
+                        height=bar_height,
+                        border_radius='999px',
+                        overflow='hidden',
                     ),
                     rx.hstack(
-                        rx.box(width='10px', height='10px', border_radius='999px', bg=rx.color('green', 9)),
-                        rx.text('Green means power sent back to the grid', size='2', color=rx.color('gray', 10)),
-                        spacing='2',
-                        align='center',
+                        rx.text('To grid', size='2', color=rx.color('gray', 10)),
+                        rx.spacer(),
+                        rx.text(export_text, size='3', weight='medium'),
+                        width='100%',
                     ),
-                    spacing='4',
-                    wrap='wrap',
+                    rx.box(
+                        rx.box(width=export_width, height=bar_height, bg=rx.color('green', 9), border_radius='999px'),
+                        bg=rx.color('green', 3),
+                        width='100%',
+                        height=bar_height,
+                        border_radius='999px',
+                        overflow='hidden',
+                    ),
+                    spacing='3',
                     width='100%',
+                    align='stretch',
                 ),
-                spacing='3', width='100%', align='stretch'
+                rx.spacer(),
+                rx.vstack(
+                    rx.text(scale_text, size='2', color=rx.color('gray', 10)),
+                    rx.hstack(
+                        rx.hstack(
+                            rx.box(width='10px', height='10px', border_radius='999px', bg=rx.color('blue', 9)),
+                            rx.text('Blue means power bought from the grid', size='2', color=rx.color('gray', 10)),
+                            spacing='2',
+                            align='center',
+                        ),
+                        rx.hstack(
+                            rx.box(width='10px', height='10px', border_radius='999px', bg=rx.color('green', 9)),
+                            rx.text('Green means power sent back to the grid', size='2', color=rx.color('gray', 10)),
+                            spacing='2',
+                            align='center',
+                        ),
+                        spacing='4',
+                        wrap='wrap',
+                        width='100%',
+                    ),
+                    spacing='3',
+                    width='100%',
+                    align='stretch',
+                ),
+                spacing='4',
+                width='100%',
+                align='stretch',
+                height='100%',
             ),
-            spacing=inner_spacing, align='stretch', justify='start', width='100%'
+            spacing=inner_spacing,
+            align='stretch',
+            justify='start',
+            width='100%',
+            height='100%',
         ),
         size=size,
         padding=body_padding,
         border_radius='20px',
         width='100%',
-        height='auto',
-        align_self='start',
+        height='100%',
+        align_self='stretch',
         box_shadow='0 2px 12px rgba(15,23,42,0.04)',
     )
 
