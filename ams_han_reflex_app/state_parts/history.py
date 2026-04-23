@@ -1,3 +1,5 @@
+"""Reflex state slice for saved-reading tables and history-tab summaries."""
+
 from __future__ import annotations
 
 from ..domain.analysis import HistoryTableRow

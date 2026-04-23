@@ -1,3 +1,5 @@
+"""Serial-port discovery and connection helpers for finding the ESP32 gateway reliably."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

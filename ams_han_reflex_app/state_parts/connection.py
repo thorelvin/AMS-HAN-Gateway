@@ -1,3 +1,5 @@
+"""Reflex state slice for serial connection, Wi-Fi, MQTT, and advanced-tool settings."""
+
 from __future__ import annotations
 
 from .common import _service

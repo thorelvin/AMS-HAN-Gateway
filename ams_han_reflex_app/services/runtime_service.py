@@ -1,3 +1,5 @@
+"""Live runtime state manager that applies parsed gateway lines to device status, history, and event state."""
+
 from __future__ import annotations
 
 from collections import deque
@@ -40,6 +42,8 @@ class RuntimeState:
 
 
 class RuntimeService:
+    """Applies parsed gateway lines to the mutable live state used by the dashboard."""
+
     def __init__(
         self,
         event_log_store: EventLogStore,
@@ -88,6 +92,8 @@ class RuntimeService:
         return normalized
 
     def _reclassify_event_log_for_mains(self) -> None:
+        # Existing power events are re-labeled when the user switches between TN and IT
+        # so signatures, heatmaps, and diagnostics stay consistent with the chosen model.
         session_start_info: dict[str, tuple[str, str]] = {}
         for event in self.state.event_log:
             if str(event.get("category", "") or "") != "power":
@@ -144,6 +150,8 @@ class RuntimeService:
 
     def _snapshot_sample(self, snap: SnapshotEvent) -> dict[str, Any]:
         detail = self.state.latest_kfm_detail or {}
+        # Event rules operate on a compact, normalized sample shape rather than the
+        # raw protocol models. That keeps the event engine independent of serial details.
         return {
             "timestamp": snap.timestamp,
             "import_w": snap.import_w,
@@ -187,6 +195,8 @@ class RuntimeService:
         elif parsed.kind == "frame":
             self.state.last_frame_seq = parsed.payload.sequence
             self.state.last_frame_len = parsed.payload.length
+            # FRAME lines carry richer raw meter data than SNAP. When they decode
+            # cleanly, the dashboard can show per-phase voltages and extra detail.
             detail = parse_kfm001_frame(parsed.payload.hex_payload)
             if detail:
                 self.state.latest_kfm_detail = detail
@@ -198,6 +208,8 @@ class RuntimeService:
             record_history(snap)
             sample = self._snapshot_sample(snap)
             previous = self.state.recent_phase_samples[-1] if self.state.recent_phase_samples else None
+            # Baselines come from slightly older history so we can classify changes as
+            # "normal background" versus "notable event" without relying on one sample.
             baseline = derive_baseline(snap.timestamp, history_records_desc(30)[1:])
             self.state.recent_phase_samples.append(sample)
             for event in self.event_engine.process_sample(sample, previous, baseline):

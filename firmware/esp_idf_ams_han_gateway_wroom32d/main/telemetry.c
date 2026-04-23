@@ -33,6 +33,8 @@ static float f_abs(float v) {
 }
 
 void telemetry_apply_derivations(han_snapshot_t *s) {
+    // These derived values are duplicated on the firmware side so the dashboard gets
+    // useful summaries immediately, even before it does any richer analysis itself.
     s->total_current_a = s->l1_a + s->l2_a + s->l3_a;
     s->avg_voltage_v = (s->l1_v + s->l2_v + s->l3_v) / 3.0f;
     s->phase_imbalance_a = fmax3(s->l1_a, s->l2_a, s->l3_a) - fmin3(s->l1_a, s->l2_a, s->l3_a);
@@ -51,6 +53,8 @@ void telemetry_apply_rolling_window(han_snapshot_t *s) {
         return;
     }
 
+    // The rolling window smooths noisy per-frame readings and gives the dashboard a
+    // stable "recent average" view without storing a large history on the device.
     rolling_entry_t e = {
         .valid = true,
         .import_w = s->import_w,

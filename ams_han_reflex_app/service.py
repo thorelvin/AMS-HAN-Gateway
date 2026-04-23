@@ -1,3 +1,5 @@
+"""High-level gateway coordinator that glues serial IO, history, analysis, pricing, and replay together."""
+
 from __future__ import annotations
 
 import threading
@@ -27,7 +29,10 @@ DEFAULT_SETTINGS: dict[str, Any] = GatewaySettings(
     mains_network_type=DEFAULT_MAINS_NETWORK_TYPE,
 ).as_dict()
 
+
 class GatewayService:
+    """Compatibility facade used by the UI while the internals stay split by responsibility."""
+
     def __init__(
         self,
         db_path: Path,
@@ -43,6 +48,8 @@ class GatewayService:
         self.settings_service = SettingsService(settings_store or SettingsStore(default_settings_path(), DEFAULT_SETTINGS))
         self.settings = self.settings_service.settings
         self.event_log_store = event_log_store or EventLogStore(self.settings_service.directory/'event_log.json')
+        # Runtime state, storage, replay, pricing, and connection handling are split
+        # into focused services. This coordinator keeps the UI API stable.
         self.runtime_service = RuntimeService(
             self.event_log_store,
             mains_network_type=self.settings.mains_network_type,
@@ -388,6 +395,8 @@ class GatewayService:
 
     def _on_line(self, raw: str):
         with self._lock:
+            # Live serial traffic and replay traffic both flow through this one ingest
+            # path so parsing, history, event detection, and UI state stay in sync.
             self.runtime_service.ingest_raw_line(
                 raw,
                 history_records_desc=self._history_records_desc,

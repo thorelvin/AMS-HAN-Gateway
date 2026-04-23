@@ -1,3 +1,5 @@
+"""Thin service wrapper around the pure analysis functions used by the dashboard."""
+
 from __future__ import annotations
 
 from typing import Any

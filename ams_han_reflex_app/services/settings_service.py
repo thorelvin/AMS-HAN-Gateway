@@ -1,3 +1,5 @@
+"""Tiny persistence service for dashboard settings stored outside the UI state layer."""
+
 from __future__ import annotations
 
 from pathlib import Path

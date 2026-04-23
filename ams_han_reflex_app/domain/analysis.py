@@ -1,3 +1,5 @@
+"""Pure analysis helpers that turn stored snapshots into UI-ready summaries, tables, and heatmaps."""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -168,6 +170,8 @@ def import_export_bar(snapshot, records_desc) -> dict[str, str]:
     for r in records_desc[:500]:
         peak = max(peak, r.snapshot.import_w, r.snapshot.export_w)
     peak = max(peak, 1.0)
+    # The bar scale is relative to recent history, not a fixed watt value, so the
+    # card stays useful across homes with very different import/export ranges.
     if snapshot is None:
         return {'import_width':'0%','export_width':'0%','import_text':'0.0 W','export_text':'0.0 W','scale_text':'No recent peak yet'}
     return {
@@ -269,6 +273,8 @@ def _integrated_energy_windows(records_desc: list[Any], latest_dt: datetime | No
         if dt is None:
             continue
         if prev_dt is not None and prev_snapshot is not None:
+            # Energy is estimated by integrating power over the actual time gap between
+            # snapshots. That makes hour/day/week values stable even when frame timing varies.
             delta_h = max(0.0, (dt - prev_dt).total_seconds() / 3600.0)
             if 0.0 < delta_h < 0.5:
                 import_kwh = (prev_snapshot.import_w / 1000.0) * delta_h

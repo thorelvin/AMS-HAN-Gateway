@@ -1,3 +1,5 @@
+"""Helpers for switching between TN and IT mains interpretations throughout the analysis stack."""
+
 from __future__ import annotations
 
 import re

@@ -1,3 +1,5 @@
+"""Reflex state slice for power-pattern, signature, and usage-map views."""
+
 from __future__ import annotations
 
 from ..domain.analysis import HeatmapRow, TopHourRow

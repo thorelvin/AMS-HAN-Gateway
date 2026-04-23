@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ams_han_reflex_app import service as service_module
 from ams_han_reflex_app.domain.pricing import PriceQuote
+from ams_han_reflex_app.support.replay_player import normalize_replay_line
 
 
 class _ConnectedSerial:
@@ -57,6 +58,14 @@ def _play_replay_fixture(svc: service_module.GatewayService, fixture_name: str, 
     while svc.advance_replay(chunk_size):
         pass
     return load_message, start_message
+
+
+def _ingest_live_fixture(svc: service_module.GatewayService, fixture_name: str) -> None:
+    fixture_path = FIXTURE_DIR / fixture_name
+    for raw_line in fixture_path.read_text(encoding="utf-8").splitlines():
+        line = normalize_replay_line(raw_line)
+        if line is not None:
+            svc._on_line(line)
 
 
 class GatewayServiceTest(unittest.TestCase):
@@ -213,6 +222,61 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(cost.warning_text, "")
             self.assertTrue(isinstance(cost.rows, list))
             self.assertTrue(heatmaps.recent_rows)
+
+    def test_live_demo_session_fixture_drives_public_runtime_callback_and_sync_snapshot(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
+
+            svc._on_state(True, "Connected to COM4")
+            _ingest_live_fixture(svc, "demo_session.log")
+
+            sync = svc.dashboard_sync_data()
+            snapshot = svc.snapshot_dict()
+            summary = svc.get_summary(100)
+
+            self.assertEqual(summary.count, 2)
+            self.assertEqual(sync.connection_status, "Connected to COM4")
+            self.assertEqual(sync.device_id, "esp32-21C9C4")
+            self.assertEqual(sync.firmware, "0.2.0-wroom32d")
+            self.assertEqual(sync.wifi_state, "CONNECTED")
+            self.assertEqual(sync.wifi_ip, "192.168.1.191")
+            self.assertEqual(sync.mqtt_state, "IDLE")
+            self.assertEqual(sync.last_frame, "seq=58, len=121")
+            self.assertEqual(sync.snapshot_meter_time, "2026-04-16 23:50:50")
+            self.assertEqual(sync.snapshot_meter, "6970631408353607 (MA304H3E)")
+            self.assertIn("Import 1273.0 W | Export 0.0 W | Net 1273.0 W", sync.snapshot_power)
+            self.assertIn("L1 233.5 V | L2 0.0 V | L3 232.8 V | Avg 233.2 V", sync.snapshot_voltage)
+            self.assertIn("L1 2.843 A | L2 3.787 A | L3 4.235 A | Total 10.865 A", sync.snapshot_current)
+            self.assertIn("Rolling 6 | RX 58 | Bad 0", sync.snapshot_counters)
+            self.assertEqual(snapshot["meter_time"], "2026-04-16 23:50:50")
+            self.assertIn("Signed grid flow -1273.0 W", snapshot["grid_flow"])
+            self.assertIsNotNone(svc.latest_kfm_detail)
+            self.assertEqual(svc.latest_kfm_detail["meter_timestamp"], "2026-04-16 23:50:50")
+            self.assertEqual(svc.latest_kfm_detail["meter_id"], "6970631408353607")
+            self.assertTrue(any("RX: FRAME,58,121" in line for line in svc.logs))
+
+    def test_firmware_contract_fixture_updates_status_lines_live_sync_and_han_log(self):
+        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
+            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        ):
+            svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
+
+            for line in (FIXTURE_DIR / "firmware_protocol_contract.log").read_text(encoding="utf-8").splitlines():
+                svc._on_line(line)
+
+            sync = svc.dashboard_sync_data()
+
+            self.assertEqual(sync.device_id, "esp32-21C9C4")
+            self.assertEqual(sync.wifi_state, "CONNECTED")
+            self.assertEqual(sync.wifi_ip, "192.168.1.191")
+            self.assertEqual(sync.mqtt_state, "IDLE")
+            self.assertEqual(sync.last_frame, "seq=241, len=39")
+            self.assertEqual(sync.snapshot_meter_time, "2026-04-20 22:37:20")
+            self.assertEqual(sync.snapshot_counters, "Rolling 6 | RX 332 | Bad 0")
+            self.assertIn("Import 1978.0 W | Export 0.0 W | Net -1978.0 W", sync.snapshot_power)
+            self.assertIn("HAN status: CONNECTED", "\n".join(svc.logs))
 
 
 if __name__ == "__main__":

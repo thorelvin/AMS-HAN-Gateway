@@ -1,3 +1,5 @@
+"""Load-signature grouping that turns repeated power events into likely recurring household loads."""
+
 from __future__ import annotations
 
 from collections import defaultdict

@@ -1,3 +1,5 @@
+"""Protocol helpers for the text-based link between the dashboard and the ESP32 gateway."""
+
 from __future__ import annotations
 
 from typing import Iterable

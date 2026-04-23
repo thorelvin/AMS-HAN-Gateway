@@ -1,3 +1,5 @@
+"""Pricing and grid-tariff helpers for Norwegian spot power and capacity-step estimates."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,3 +1,5 @@
+"""Small JSON-backed store for keeping the event timeline persistent between runs."""
+
 from __future__ import annotations
 
 import json

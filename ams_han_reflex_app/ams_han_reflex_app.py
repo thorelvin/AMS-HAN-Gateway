@@ -1,3 +1,5 @@
+"""Reflex page layout for the dashboard UI and all visible tabs/panels."""
+
 from __future__ import annotations
 
 import reflex as rx

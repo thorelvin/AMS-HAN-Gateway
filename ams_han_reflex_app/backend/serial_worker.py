@@ -1,3 +1,5 @@
+"""Background serial worker that keeps USB traffic off the Reflex UI thread."""
+
 from __future__ import annotations
 
 import queue

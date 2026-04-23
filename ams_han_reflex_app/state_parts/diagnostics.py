@@ -1,3 +1,5 @@
+"""Reflex state slice for warning filters, event lists, and diagnostic refreshes."""
+
 from __future__ import annotations
 
 from ..domain.analysis import DiagnosticsEventRow

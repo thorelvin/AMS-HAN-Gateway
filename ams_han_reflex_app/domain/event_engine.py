@@ -1,3 +1,5 @@
+"""Event-detection rules that convert successive power samples into warnings, steps, and load sessions."""
+
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass

@@ -1,3 +1,5 @@
+"""Reflex state slice that converts backend sync data into display-friendly UI fields."""
+
 from __future__ import annotations
 
 import reflex as rx

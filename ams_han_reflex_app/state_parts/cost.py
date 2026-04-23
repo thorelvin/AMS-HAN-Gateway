@@ -1,3 +1,5 @@
+"""Reflex state slice for cost-tab settings, warnings, and hourly cost rows."""
+
 from __future__ import annotations
 
 from ..backend.models import CapacityStepVisual, CostRow

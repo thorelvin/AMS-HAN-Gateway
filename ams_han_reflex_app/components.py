@@ -1,3 +1,5 @@
+"""Reusable Reflex UI building blocks shared across the dashboard."""
+
 from __future__ import annotations
 
 import reflex as rx

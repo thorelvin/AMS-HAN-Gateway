@@ -1,3 +1,5 @@
+"""History storage service for persisted readings and replay-backed in-memory records."""
+
 from __future__ import annotations
 
 from collections import deque

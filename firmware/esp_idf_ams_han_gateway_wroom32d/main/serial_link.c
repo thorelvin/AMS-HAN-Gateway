@@ -86,6 +86,8 @@ void serial_link_send_mqtt_status(mqtt_state_t state) {
 }
 
 void serial_link_send_status_line(const char *category, const char *state, const char *extra) {
+    // STATUS lines are intentionally short because they are emitted often and are
+    // consumed by both the live dashboard and replay fixtures.
     printf("STATUS,%s,%s", category ? category : "", state ? state : "");
     if (extra && extra[0]) {
         printf(",%s", extra);
@@ -94,6 +96,7 @@ void serial_link_send_status_line(const char *category, const char *state, const
 }
 
 void serial_link_send_frame(uint32_t seq, const uint8_t *data, uint16_t len) {
+    // Raw frames are hex-encoded so they remain printable, loggable, and replayable.
     printf("FRAME,%lu,%u,", (unsigned long)seq, (unsigned)len);
     for (uint16_t i = 0; i < len; ++i) {
         printf("%02X", data[i]);
@@ -102,6 +105,8 @@ void serial_link_send_frame(uint32_t seq, const uint8_t *data, uint16_t len) {
 }
 
 void serial_link_send_snapshot(const han_snapshot_t *s) {
+    // SNAP is the dashboard-friendly summary row: fixed field order, compact values,
+    // and easy parsing on the Python side and in replay files.
     printf("SNAP,%lu,%s,%s,%04u-%02u-%02u %02u:%02u:%02u,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.3f,%.3f,%.3f,%.1f,%.2f,%.3f,%.3f,%u,%lu,%lu\n",
            (unsigned long)s->seq,
            s->meter_id[0] ? s->meter_id : "",

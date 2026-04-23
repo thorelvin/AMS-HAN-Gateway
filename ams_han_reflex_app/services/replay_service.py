@@ -1,3 +1,5 @@
+"""Minimal adapter around the replay player so replay control stays testable and swappable."""
+
 from __future__ import annotations
 
 from pathlib import Path

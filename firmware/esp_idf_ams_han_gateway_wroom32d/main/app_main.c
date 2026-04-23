@@ -26,6 +26,8 @@ typedef struct {
 } command_fields_t;
 
 static void publish_status(void) {
+    // The dashboard consumes Wi-Fi and MQTT status as separate serial lines, while
+    // MQTT also republishes a retained status view for external subscribers.
     serial_link_send_wifi_status(wifi_manager_get_state(), wifi_manager_get_ip());
     serial_link_send_mqtt_status(app_mqtt_get_state());
     app_mqtt_publish_status(&s_cfg, wifi_manager_get_state(), app_mqtt_get_state(), wifi_manager_get_ip());
@@ -57,6 +59,8 @@ static bool split_command_fields(const char *line, char *buffer, size_t buffer_s
     while (line[src] != '\0') {
         char ch = line[src++];
         if (ch == '\\') {
+            // The desktop app escapes commas, backslashes, and newlines so text
+            // fields like SSIDs or passwords can travel safely in one line.
             char next = line[src];
             if (next == '\0') {
                 ch = '\\';
@@ -108,6 +112,8 @@ static void handle_command(const char *line) {
 
     const char *command = fields.fields[0];
 
+    // Keep dispatch explicit and string-based. The command surface is intentionally
+    // small and easier to understand this way when debugging from a serial terminal.
     if (strcmp(command, "GET_INFO") == 0) {
         serial_link_send_info(&s_cfg);
         return;
@@ -239,6 +245,8 @@ static void on_snapshot(const han_snapshot_t *snapshot) {
     s_last_snapshot = *snapshot;
     s_have_snapshot = true;
 
+    // The PC dashboard wants both levels: raw FRAME lines for deep decoding and
+    // compact SNAP lines for fast summaries, replay, and storage.
     if (snapshot->raw_valid) {
         serial_link_send_frame(snapshot->seq, snapshot->raw, snapshot->raw_len);
     }
@@ -253,6 +261,8 @@ static void status_task(void *arg) {
     while (1) {
         publish_status();
 
+        // This periodic re-arm keeps MQTT alive across transient Wi-Fi changes
+        // without needing a reboot or a manual reconnect from the dashboard.
         if (wifi_manager_is_connected() && s_cfg.mqtt_enabled && app_mqtt_get_state() == MQTT_STATE_IDLE) {
             app_mqtt_apply_config(&s_cfg);
         }

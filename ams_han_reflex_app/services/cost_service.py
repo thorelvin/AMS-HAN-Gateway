@@ -1,3 +1,5 @@
+"""Cost-summary service that combines stored energy data with cached price information."""
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -1,3 +1,5 @@
+"""Replay helpers that normalize captured log lines and step through them like a live stream."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

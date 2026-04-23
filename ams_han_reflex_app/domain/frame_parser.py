@@ -1,3 +1,5 @@
+"""Decoder for raw Kaifa KFM_001 frames so the dashboard can enrich terse SNAP lines with per-phase detail."""
+
 from __future__ import annotations
 
 from typing import Any

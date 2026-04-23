@@ -1,3 +1,5 @@
+"""Dashboard state composition that combines the smaller Reflex state slices into one UI-facing state object."""
+
 from __future__ import annotations
 
 import reflex as rx
@@ -18,6 +20,8 @@ from .state_parts import (
 
 
 def _state_members(*parts: type) -> dict[str, object]:
+    # Reflex wants one concrete State class. We keep the code maintainable by
+    # defining smaller slices and merging their fields/methods here.
     annotations: dict[str, object] = {}
     namespace: dict[str, object] = {}
     for part in parts:
@@ -31,6 +35,8 @@ def _state_members(*parts: type) -> dict[str, object]:
 
 
 class DashboardState(rx.State):
+    """Single Reflex state object assembled from the focused dashboard state slices."""
+
     locals().update(
         _state_members(
             DashboardConnectionState,

@@ -1,3 +1,5 @@
+"""JSON-backed settings persistence used by the dashboard services."""
+
 from __future__ import annotations
 
 import json

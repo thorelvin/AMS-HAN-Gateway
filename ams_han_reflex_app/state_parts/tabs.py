@@ -1,3 +1,5 @@
+"""Reflex state slice for cross-tab refresh behavior and current-tab selection."""
+
 from __future__ import annotations
 
 

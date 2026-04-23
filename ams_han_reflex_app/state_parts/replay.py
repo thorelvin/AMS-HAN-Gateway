@@ -1,3 +1,5 @@
+"""Reflex state slice for replay loading, upload handling, and playback control."""
+
 from __future__ import annotations
 
 import reflex as rx
