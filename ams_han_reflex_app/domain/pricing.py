@@ -122,7 +122,8 @@ class PriceProvider:
                 fallback_used=True,
                 warning_text=warning,
             )
-        target_hour = dt.hour
+        target_dt = dt.astimezone()
+        target_hour = target_dt.hour
         source_note = f"{area} spot prices ex VAT from hvakosterstrommen.no"
         for row in day.entries:
             start = str(row.get("time_start") or "")
@@ -132,7 +133,7 @@ class PriceProvider:
                 start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
             except Exception:
                 continue
-            if start_dt.astimezone().hour != target_hour:
+            if start_dt.astimezone(target_dt.tzinfo).hour != target_hour:
                 continue
             try:
                 return PriceQuote(
