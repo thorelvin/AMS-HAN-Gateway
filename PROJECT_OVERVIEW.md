@@ -134,6 +134,16 @@ This repository is strongest in the following areas right now:
 
 It is not yet positioned as a packaged end-user product. The current emphasis is on development usability, technical insight, and iterative improvement of the monitoring experience.
 
+## Developer workflow
+
+The repository now has a clearer local and hosted development path:
+
+- `requirements.txt` keeps the runtime dependencies minimal for dashboard use
+- `requirements-dev.txt` adds contributor tooling for linting, formatting checks, and test execution
+- `python scripts/run_dashboard.py` remains the one-command local launch path
+- `python scripts/run_checks.py` runs the standard local quality gate
+- GitHub Actions now provides visible `Python checks` and `Firmware build` workflow status in the repository
+
 ## Current status
 
 Recent work has improved the repository with:
@@ -152,6 +162,8 @@ Recent work has improved the repository with:
 - replay-driven service workflow coverage in the automated tests
 - explicit escaped command encoding on the Python side together with firmware-side unescaping and validation
 - one-command local launch path via `python scripts/run_dashboard.py`
+- one-command local quality checks via `python scripts/run_checks.py`
+- GitHub Actions workflow coverage for Python checks and ESP-IDF firmware builds
 - refreshed documentation aligned with both the bundled ESP-IDF gateway source and the standard used in the related PC-side repository
 
 ## Near-term improvement areas
@@ -160,5 +172,5 @@ Recent work has improved the repository with:
 - further decomposition of the Reflex state layer into smaller feature-focused modules
 - expanded replay scenarios for additional failure and appliance patterns
 - deeper export and solar analytics
-- broader gateway protocol documentation
+- richer firmware flashing and deployment guidance for non-developer setups
 - packaging and deployment improvements beyond the current local launch helper

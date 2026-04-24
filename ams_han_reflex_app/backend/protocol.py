@@ -30,12 +30,7 @@ GATEWAY_PROTOCOL_PREFIXES = (
 
 def escape_command_field(value: object) -> str:
     text = str(value)
-    return (
-        text.replace("\\", "\\\\")
-        .replace(",", "\\,")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-    )
+    return text.replace("\\", "\\\\").replace(",", "\\,").replace("\n", "\\n").replace("\r", "\\r")
 
 
 def split_escaped_fields(text: str) -> list[str]:

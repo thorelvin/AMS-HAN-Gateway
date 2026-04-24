@@ -1,5 +1,8 @@
 # AMS HAN Gateway
 
+[![Python checks](https://github.com/thorelvin/AMS-HAN-Gateway/actions/workflows/python-checks.yml/badge.svg)](https://github.com/thorelvin/AMS-HAN-Gateway/actions/workflows/python-checks.yml)
+[![Firmware build](https://github.com/thorelvin/AMS-HAN-Gateway/actions/workflows/firmware-build.yml/badge.svg)](https://github.com/thorelvin/AMS-HAN-Gateway/actions/workflows/firmware-build.yml)
+
 A practical AMS/HAN smart-meter monitoring project built around an ESP32 gateway and a local Reflex dashboard.
 
 This repository focuses on the gateway-side monitoring experience: live meter visibility, replay-driven troubleshooting, diagnostics, phase and voltage analysis, and Norwegian power-cost context in one local web application. The goal is to keep the embedded gateway workflow lightweight while letting the dashboard handle parsing, storage, visualization, event detection, and operator-facing analysis.
@@ -188,6 +191,8 @@ Price area, live cost estimate, explicit price-warning handling, electricity pri
 
 ![Costs tab](docs/images/dashboard-costs.png)
 
+The cost view is designed to be practical and transparent rather than pretending to be a billing engine. Spot-price fallback is explicit in the UI, the day and night grid-energy values are user-adjustable in the `Costs` tab, and the monthly capacity-step ladder should be read as a built-in reference estimate unless you adapt the defaults to your local utility.
+
 ### History
 
 Stored snapshot history with averages, peaks, and local database context:
@@ -289,6 +294,7 @@ Architecture rules for those boundaries are documented in [docs/ARCHITECTURE_BOU
 |-- PROJECT_OVERVIEW.md
 |-- README.md
 |-- requirements.txt
+|-- requirements-dev.txt
 `-- rxconfig.py
 ```
 
@@ -298,8 +304,10 @@ Architecture rules for those boundaries are documented in [docs/ARCHITECTURE_BOU
 - `firmware/esp_idf_ams_han_gateway_wroom32d/` contains the ESP-IDF firmware project for the ESP32 gateway in a reviewable source layout.
 - `fixtures/` contains bundled replay logs for testing gateway and dashboard behavior without live data.
 - `scripts/run_dashboard.py` provides a one-command local dashboard launch path.
+- `scripts/run_checks.py` provides one local quality gate for linting, formatting checks, and tests.
 - `tests/` contains regression coverage for replay loading, protocol parsing, heatmap analysis, service behavior, signature grouping, and a replay-driven service workflow.
 - `PROJECT_OVERVIEW.md` provides a concise engineering summary of the repository.
+- `requirements-dev.txt` collects the local contributor tooling used by both developers and CI.
 
 ## ESP32 firmware reference
 
@@ -345,15 +353,27 @@ The embedded project is set up for an `ESP32-WROOM-32D` development board with U
 - HAN TX: `GPIO17`
 - HAN UART baudrate: `2400`
 
-### Building the firmware
+### Build and flash the firmware
 
-From `firmware/esp_idf_ams_han_gateway_wroom32d/`, the ESP-IDF README uses the following workflow:
+Use an ESP-IDF shell where `idf.py` is already available.
+
+On Windows, the official ESP-IDF setup normally gives you an `ESP-IDF PowerShell` or `ESP-IDF Command Prompt` shortcut. If you open a normal shell instead, load the ESP-IDF environment for that installation first and then continue from the project directory below.
+
+From `firmware/esp_idf_ams_han_gateway_wroom32d/`:
 
 ```bash
 idf.py set-target esp32
 idf.py build
-idf.py -p COM5 flash monitor
+idf.py -p COM5 flash
+idf.py -p COM5 monitor
 ```
+
+Practical notes:
+
+- replace `COM5` with the actual ESP32 serial port on your machine
+- run `idf.py set-target esp32` again if you switch chip family or ESP-IDF environment
+- `idf.py build` is enough for CI or compile-only verification
+- `idf.py flash` and `idf.py monitor` are the normal local hardware flow once the build succeeds
 
 ### Firmware serial protocol
 
@@ -413,6 +433,35 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+## Developer tooling
+
+For contributors and local quality checks, install the dev dependencies as well:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+The repository now includes one simple local check entry point:
+
+```bash
+python scripts/run_checks.py
+```
+
+That helper runs:
+
+- `ruff` for lightweight Python linting
+- `black --check` for formatting verification
+- `python -m unittest` for the current regression suite
+
+`pytest` is also included in `requirements-dev.txt` for contributors who prefer that runner or want to extend the fixture-driven test layer over time.
+
+## CI status
+
+The repository now includes two GitHub Actions workflows:
+
+- `Python checks` installs the app plus contributor tooling, then runs linting, formatting checks, and the Python regression suite
+- `Firmware build` compiles the ESP-IDF project on GitHub so firmware changes get a visible build result in the repository UI
+
 ## Quick start
 
 ### 1. Start the dashboard
@@ -460,7 +509,7 @@ The default experience is built around a few main areas:
 If you want to work on the embedded side as well as the dashboard:
 
 - open the ESP-IDF project inside `firmware/esp_idf_ams_han_gateway_wroom32d/`
-- build and flash the ESP32 firmware
+- use an ESP-IDF shell and run `idf.py set-target esp32`, `idf.py build`, `idf.py -p COM5 flash`, and `idf.py -p COM5 monitor`
 - connect the ESP32 over USB so the Reflex app can probe it as the gateway source
 
 ## Replay workflow
@@ -509,12 +558,28 @@ Current analysis and diagnostics include:
 - cost rows built from elapsed time between snapshots rather than raw sample counts
 - capacity estimate based on top hourly import averages on different days
 
+## Pricing and tariff defaults
+
+The spot-price workflow already warns clearly when the live source is unavailable, but some tariff assumptions are still shipped as practical defaults:
+
+- the day and night grid-energy rates start from example values and can be changed from the `Costs` tab
+- the monthly capacity-step ladder is currently a built-in reference table for estimation, not a full tariff engine for every Norwegian grid company
+- those defaults are intentionally easy to find in `ams_han_reflex_app/domain/pricing.py` if you want the repository to reflect another utility model
+
+That means the cost and capacity views are useful for comparison, planning, and peak hunting, but users should still align the defaults with their own tariff rules before treating the result as billing-like truth.
+
 ## Testing
 
 Automated coverage is still lighter than full live-hardware end-to-end testing, but it now protects several of the highest-value seams in the repository:
 
 ```bash
 python -m unittest
+```
+
+or, with the local helper:
+
+```bash
+python scripts/run_checks.py
 ```
 
 This currently checks:

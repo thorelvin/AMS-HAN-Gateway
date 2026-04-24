@@ -163,13 +163,27 @@ class SnapshotStore:
             writer = csv.writer(f)
             writer.writerow(
                 [
-                    "received_at", "sequence", "meter_id", "meter_type", "meter_timestamp",
-                    "import_w", "export_w", "q_import_var", "q_export_var",
-                    "avg_voltage_v", "phase_imbalance_a",
-                    "l1_a", "l2_a", "l3_a",
-                    "net_power_w", "estimated_power_factor",
-                    "total_current_a", "apparent_power_va",
-                    "rolling_samples", "frames_rx", "frames_bad",
+                    "received_at",
+                    "sequence",
+                    "meter_id",
+                    "meter_type",
+                    "meter_timestamp",
+                    "import_w",
+                    "export_w",
+                    "q_import_var",
+                    "q_export_var",
+                    "avg_voltage_v",
+                    "phase_imbalance_a",
+                    "l1_a",
+                    "l2_a",
+                    "l3_a",
+                    "net_power_w",
+                    "estimated_power_factor",
+                    "total_current_a",
+                    "apparent_power_va",
+                    "rolling_samples",
+                    "frames_rx",
+                    "frames_bad",
                 ]
             )
             for record in reversed(rows):

@@ -5,18 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-VALID_PREFIXES = ('RSP:', 'FRAME,', 'SNAP,', 'STATUS,')
+VALID_PREFIXES = ("RSP:", "FRAME,", "SNAP,", "STATUS,")
 
 
 def normalize_replay_line(line: str) -> str | None:
     raw = line.strip()
     if not raw:
         return None
-    if ' RX: ' in raw:
-        raw = raw.split(' RX: ', 1)[1].strip()
-    elif raw.startswith('RX: '):
+    if " RX: " in raw:
+        raw = raw.split(" RX: ", 1)[1].strip()
+    elif raw.startswith("RX: "):
         raw = raw[4:].strip()
-    elif raw.startswith('MOTTATT: '):
+    elif raw.startswith("MOTTATT: "):
         raw = raw[8:].strip()
     for prefix in VALID_PREFIXES:
         if raw.startswith(prefix):
@@ -37,27 +37,27 @@ class ReplaySummary:
     @property
     def progress_text(self) -> str:
         if not self.loaded:
-            return 'No replay loaded'
+            return "No replay loaded"
         pct = 0.0 if self.total <= 0 else (100.0 * self.position / self.total)
-        return f'{self.position}/{self.total} lines ({pct:.0f}%)'
+        return f"{self.position}/{self.total} lines ({pct:.0f}%)"
 
     @property
     def status_text(self) -> str:
         if not self.loaded:
-            return 'Idle'
+            return "Idle"
         if self.active and not self.paused:
-            return 'Playing'
+            return "Playing"
         if self.paused:
-            return 'Paused'
+            return "Paused"
         if self.position >= self.total:
-            return 'Finished'
-        return 'Loaded'
+            return "Finished"
+        return "Loaded"
 
 
 class ReplayPlayer:
     def __init__(self) -> None:
         self.entries: list[str] = []
-        self.source_name = ''
+        self.source_name = ""
         self.loaded = False
         self.active = False
         self.paused = False
@@ -80,7 +80,7 @@ class ReplayPlayer:
 
     def load_file(self, path: str | Path, demo: bool = False) -> None:
         p = Path(path)
-        text = p.read_text(encoding='utf-8')
+        text = p.read_text(encoding="utf-8")
         self.load_lines(text.splitlines(), p.name, demo=demo)
 
     def start(self) -> None:
@@ -106,7 +106,7 @@ class ReplayPlayer:
         self.paused = False
         if unload:
             self.entries = []
-            self.source_name = ''
+            self.source_name = ""
             self.loaded = False
             self.position = 0
             self.demo = False

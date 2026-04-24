@@ -37,7 +37,9 @@ def _build_service(temp_dir: str) -> service_module.GatewayService:
     )
 
 
-def _run_replay_fixture(svc: service_module.GatewayService, fixture_name: str, *, chunk_size: int = 16) -> tuple[str, str, int]:
+def _run_replay_fixture(
+    svc: service_module.GatewayService, fixture_name: str, *, chunk_size: int = 16
+) -> tuple[str, str, int]:
     load_message = svc.load_replay_lines(_fixture_lines(fixture_name), source_name=fixture_name)
     start_message = svc.start_replay()
     emitted_total = 0
@@ -51,8 +53,9 @@ def _run_replay_fixture(svc: service_module.GatewayService, fixture_name: str, *
 
 class EndToEndReplayTest(unittest.TestCase):
     def test_firmware_protocol_fixture_populates_state_via_public_replay_api(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = _build_service(temp_dir)
 
@@ -90,8 +93,9 @@ class EndToEndReplayTest(unittest.TestCase):
             self.assertIn("Frames: seq=241, len=39", snapshot["stats"])
 
     def test_demo_replay_lifecycle_updates_progress_pause_resume_and_finish(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = _build_service(temp_dir)
 
@@ -160,8 +164,11 @@ class EndToEndReplayTest(unittest.TestCase):
 
         for fixture_name, expected in expectations.items():
             with self.subTest(fixture_name=fixture_name):
-                with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-                    service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+                with (
+                    tempfile.TemporaryDirectory() as temp_dir,
+                    patch.object(
+                        service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+                    ),
                 ):
                     svc = _build_service(temp_dir)
                     _run_replay_fixture(svc, fixture_name)

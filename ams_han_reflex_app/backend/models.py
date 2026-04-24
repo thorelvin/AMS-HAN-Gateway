@@ -215,6 +215,7 @@ class GatewaySettings:
     @classmethod
     def from_dict(cls, raw: dict[str, object] | None = None) -> "GatewaySettings":
         merged = dict(raw or {})
+
         def as_int(name: str, default: int) -> int:
             try:
                 return int(merged.get(name, default) or default)

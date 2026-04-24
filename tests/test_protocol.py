@@ -19,7 +19,9 @@ class ProtocolTest(unittest.TestCase):
         self.assertTrue(is_gateway_protocol_line("RSP:INFO,0.2.0,amshan-01,AA:BB:CC:DD:EE:FF"))
         self.assertTrue(is_gateway_protocol_line("STATUS,HAN,CONNECTED"))
         self.assertTrue(is_gateway_protocol_line("FRAME,1,10,AA55"))
-        self.assertTrue(is_gateway_protocol_line("SNAP,1,meter,type,2026-04-20 12:00:00,1,0,0,0,230,0,1,1,1,-1,0.99,3,690,1,1,0"))
+        self.assertTrue(
+            is_gateway_protocol_line("SNAP,1,meter,type,2026-04-20 12:00:00,1,0,0,0,230,0,1,1,1,-1,0.99,3,690,1,1,0")
+        )
         self.assertFalse(is_gateway_protocol_line("hello from another serial device"))
 
     def test_parse_status_line(self):

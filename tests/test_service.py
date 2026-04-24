@@ -34,7 +34,7 @@ class _FixedPriceProvider:
 
     @staticmethod
     def current_grid_rate_label(hour):
-        return 'Night (22-06)' if (hour >= 22 or hour < 6) else 'Day (06-22)'
+        return "Night (22-06)" if (hour >= 22 or hour < 6) else "Day (06-22)"
 
 
 class _FallbackPriceProvider(_FixedPriceProvider):
@@ -51,7 +51,9 @@ class _FallbackPriceProvider(_FixedPriceProvider):
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 
 
-def _play_replay_fixture(svc: service_module.GatewayService, fixture_name: str, *, chunk_size: int = 16) -> tuple[str, str]:
+def _play_replay_fixture(
+    svc: service_module.GatewayService, fixture_name: str, *, chunk_size: int = 16
+) -> tuple[str, str]:
     fixture_lines = (FIXTURE_DIR / fixture_name).read_text(encoding="utf-8").splitlines()
     load_message = svc.load_replay_lines(fixture_lines, source_name=fixture_name)
     start_message = svc.start_replay()
@@ -70,8 +72,9 @@ def _ingest_live_fixture(svc: service_module.GatewayService, fixture_name: str) 
 
 class GatewayServiceTest(unittest.TestCase):
     def test_auto_connect_is_noop_when_serial_is_already_connected(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
             svc.serial = _ConnectedSerial()
@@ -86,8 +89,9 @@ class GatewayServiceTest(unittest.TestCase):
             connect_mock.assert_not_called()
 
     def test_set_mains_network_type_reclassifies_existing_power_events(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
             svc.event_log = deque(
@@ -125,8 +129,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertIn("(Likely phase-to-phase appliance step)", svc.event_log[0]["note"])
 
     def test_clear_history_removes_persisted_rows(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(
                 Path(temp_dir) / "history.sqlite3",
@@ -141,8 +146,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(svc.get_summary(100).count, 0)
 
     def test_cost_summary_surfaces_fallback_warning(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(
                 Path(temp_dir) / "history.sqlite3",
@@ -155,8 +161,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertIn("fallback estimate", summary.warning_text.lower())
 
     def test_set_heatmap_threshold_uses_service_boundary_and_clamps(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
 
@@ -166,8 +173,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(svc.settings.heatmap_switch_threshold, 100)
 
     def test_dashboard_sync_data_exposes_ui_facing_snapshot_without_direct_state_access(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
             svc.connection_status = "Connected to COM4"
@@ -184,8 +192,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(snapshot.auto_connect_message, "Searching for gateway...")
 
     def test_wifi_and_mqtt_commands_use_escaped_protocol(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
             sent: list[str] = []
@@ -199,8 +208,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertEqual(sent[1], r"SET_MQTT,broker\,internal,1883,u\,ser,se\\cret,ams\,han")
 
     def test_demo_replay_workflow_builds_history_cost_and_heatmap_views(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(
                 Path(temp_dir) / "history.sqlite3",
@@ -224,8 +234,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertTrue(heatmaps.recent_rows)
 
     def test_live_demo_session_fixture_drives_public_runtime_callback_and_sync_snapshot(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
 
@@ -258,8 +269,9 @@ class GatewayServiceTest(unittest.TestCase):
             self.assertTrue(any("RX: FRAME,58,121" in line for line in svc.logs))
 
     def test_firmware_contract_fixture_updates_status_lines_live_sync_and_han_log(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(
-            service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
         ):
             svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
 

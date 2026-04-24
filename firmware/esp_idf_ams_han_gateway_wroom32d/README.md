@@ -35,15 +35,25 @@ This scaffold now includes:
 
 It is currently optimized for the Kaifa `KFM_001` payload you already decode on the PC side. Aidon / other meter profiles can be added later in `main/han_reader.c` as additional parsers.
 
-## Build
+## Build and flash
 
-Tested as an ESP-IDF-style project layout.
+Use an ESP-IDF shell where `idf.py` is already available.
+
+On Windows, that usually means starting the official `ESP-IDF PowerShell` or `ESP-IDF Command Prompt`. If you open a normal shell instead, load your ESP-IDF environment first and then run the commands below from this project directory.
 
 ```bash
 idf.py set-target esp32
 idf.py build
-idf.py -p COM5 flash monitor
+idf.py -p COM5 flash
+idf.py -p COM5 monitor
 ```
+
+Practical notes:
+
+- replace `COM5` with the real serial port used by the ESP32 on your PC
+- `idf.py build` is enough for a local compile-only verification run
+- `idf.py flash` and `idf.py monitor` are the normal hardware workflow once the build succeeds
+- if you change ESP-IDF environment or switch chip target, run `idf.py set-target esp32` again before rebuilding
 
 ## Pin layout
 

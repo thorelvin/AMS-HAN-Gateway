@@ -131,7 +131,9 @@ class RuntimeService:
                 continue
             if event_type == "load_session_end":
                 start_text = str(event.get("note", "") or "")
-                start_text = start_text[16:35] if start_text.startswith("Session started ") and len(start_text) >= 35 else "-"
+                start_text = (
+                    start_text[16:35] if start_text.startswith("Session started ") and len(start_text) >= 35 else "-"
+                )
                 event["summary"] = f"Load session ended on {phase}"
                 signature_note = session_start_info.get(
                     start_text,

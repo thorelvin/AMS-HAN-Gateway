@@ -28,8 +28,7 @@ class ConnectionService:
 
     def refresh_ports(self) -> list[PortOption]:
         self._last_port_options = [
-            PortOption(port=port, description=description)
-            for port, description in SerialManager.list_ports()
+            PortOption(port=port, description=description) for port, description in SerialManager.list_ports()
         ]
         return list(self._last_port_options)
 

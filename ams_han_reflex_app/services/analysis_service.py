@@ -97,7 +97,10 @@ class AnalysisService:
                 continue
             if event_filter == "severe" and event.get("severity") not in ("high", "critical"):
                 continue
-            if event_filter in ("power", "voltage", "phase", "connectivity", "data_quality") and event.get("category") != event_filter:
+            if (
+                event_filter in ("power", "voltage", "phase", "connectivity", "data_quality")
+                and event.get("category") != event_filter
+            ):
                 continue
             row = DiagnosticsEventRow(
                 time=str(event.get("time", "-")),

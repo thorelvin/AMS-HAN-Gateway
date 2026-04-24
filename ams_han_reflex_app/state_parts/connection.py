@@ -74,7 +74,10 @@ class DashboardConnectionState:
         self.sync_from_service(force_heavy=False)
         if self._slow_counter % 3 == 0:
             self.refresh_live_metrics()
-        if self.current_tab in ("analysis", "daily", "heatmap", "diagnostics", "history", "cost") and self._slow_counter % 6 == 0:
+        if (
+            self.current_tab in ("analysis", "daily", "heatmap", "diagnostics", "history", "cost")
+            and self._slow_counter % 6 == 0
+        ):
             self.refresh_tab_data()
 
     def sync_from_service(self, force_heavy: bool = False):

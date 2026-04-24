@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+
 class SettingsStore:
     def __init__(self, path: Path, defaults: dict[str, Any]) -> None:
         self.path = Path(path)
@@ -19,7 +20,7 @@ class SettingsStore:
         data = dict(self.defaults)
         try:
             if self.path.exists():
-                loaded = json.loads(self.path.read_text(encoding='utf-8'))
+                loaded = json.loads(self.path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     data.update(loaded)
         except Exception:
@@ -30,4 +31,4 @@ class SettingsStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         merged = dict(self.defaults)
         merged.update(settings)
-        self.path.write_text(json.dumps(merged, indent=2), encoding='utf-8')
+        self.path.write_text(json.dumps(merged, indent=2), encoding="utf-8")

@@ -104,7 +104,9 @@ class DashboardAnalysisState:
         self.daily_hours_text = daily.hours_text
         self.daily_peak_text = daily.peak_text
 
-        threshold = int(self.heatmap_switch_threshold or "300") if (self.heatmap_switch_threshold or "300").isdigit() else 300
+        threshold = (
+            int(self.heatmap_switch_threshold or "300") if (self.heatmap_switch_threshold or "300").isdigit() else 300
+        )
         heatmaps = _service().load_heatmaps(max(limit, 1) * 20, switch_threshold_w=threshold)
         self.heatmap_recent_rows = heatmaps.recent_rows
         self.heatmap_weekday_rows = heatmaps.weekday_rows

@@ -6,8 +6,11 @@ import json
 import time
 from pathlib import Path
 
+
 class EventLogStore:
-    def __init__(self, path: Path, max_items: int = 1200, flush_interval_s: float = 5.0, flush_every_n: int = 5) -> None:
+    def __init__(
+        self, path: Path, max_items: int = 1200, flush_interval_s: float = 5.0, flush_every_n: int = 5
+    ) -> None:
         self.path = Path(path)
         self.max_items = max_items
         self.flush_interval_s = flush_interval_s
@@ -18,9 +21,9 @@ class EventLogStore:
     def load(self) -> list[dict[str, str]]:
         try:
             if self.path.exists():
-                data = json.loads(self.path.read_text(encoding='utf-8'))
+                data = json.loads(self.path.read_text(encoding="utf-8"))
                 if isinstance(data, list):
-                    return [dict(x) for x in data[-self.max_items:] if isinstance(x, dict)]
+                    return [dict(x) for x in data[-self.max_items :] if isinstance(x, dict)]
         except Exception:
             pass
         return []
@@ -39,6 +42,6 @@ class EventLogStore:
 
     def flush(self, rows: list[dict[str, str]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(rows[-self.max_items:], indent=2), encoding='utf-8')
+        self.path.write_text(json.dumps(rows[-self.max_items :], indent=2), encoding="utf-8")
         self._dirty = 0
         self._last_flush = time.time()

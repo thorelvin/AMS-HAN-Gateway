@@ -5,7 +5,12 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ams_han_reflex_app.backend.protocol import GATEWAY_PROTOCOL_PREFIXES, build_command, list_supported_commands, parse_line
+from ams_han_reflex_app.backend.protocol import (
+    GATEWAY_PROTOCOL_PREFIXES,
+    build_command,
+    list_supported_commands,
+    parse_line,
+)
 from ams_han_reflex_app.support.replay_player import normalize_replay_line
 
 
@@ -55,13 +60,7 @@ class FirmwareProtocolContractTest(unittest.TestCase):
         )
 
     def test_python_supported_commands_cover_firmware_dispatch_commands(self):
-        firmware_path = (
-            ROOT
-            / "firmware"
-            / "esp_idf_ams_han_gateway_wroom32d"
-            / "main"
-            / "app_main.c"
-        )
+        firmware_path = ROOT / "firmware" / "esp_idf_ams_han_gateway_wroom32d" / "main" / "app_main.c"
         source = firmware_path.read_text(encoding="utf-8")
         firmware_commands = set(re.findall(r'strcmp\(command,\s+"([^"]+)"\)\s*==\s*0', source))
         python_commands = {entry.split(",", 1)[0].strip() for entry in list_supported_commands()}
@@ -79,7 +78,9 @@ class FirmwareProtocolContractTest(unittest.TestCase):
             self.assertNotEqual(parsed.kind, "error", raw_line)
             parsed_kinds.add(parsed.kind)
 
-        self.assertTrue({"device_info", "wifi_status", "mqtt_status", "status", "frame", "snapshot"}.issubset(parsed_kinds))
+        self.assertTrue(
+            {"device_info", "wifi_status", "mqtt_status", "status", "frame", "snapshot"}.issubset(parsed_kinds)
+        )
 
     def test_python_protocol_prefixes_cover_every_live_prefix_emitted_by_firmware_serial_link(self):
         source = SERIAL_LINK_PATH.read_text(encoding="utf-8")
