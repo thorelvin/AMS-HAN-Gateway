@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -44,7 +45,7 @@ class PricingTest(unittest.TestCase):
 
     def test_quote_for_hour_returns_non_blocking_background_fallback_on_empty_cache(self):
         provider = _BackgroundAwarePriceProvider()
-        target = datetime(2026, 4, 21, 10, 30)
+        target = datetime(2026, 4, 21, 10, 30, tzinfo=ZoneInfo("Europe/Oslo"))
 
         quote = provider.quote_for_hour("NO3", target)
 
@@ -54,7 +55,7 @@ class PricingTest(unittest.TestCase):
 
     def test_quote_for_hour_uses_cached_day_once_available(self):
         provider = _BackgroundAwarePriceProvider()
-        target = datetime(2026, 4, 21, 10, 30)
+        target = datetime(2026, 4, 21, 10, 30, tzinfo=ZoneInfo("Europe/Oslo"))
         provider._cache[("NO3", "2026-04-21")] = PriceDayResult(
             entries=[
                 {
@@ -72,7 +73,7 @@ class PricingTest(unittest.TestCase):
 
     def test_fetch_day_sends_explicit_request_headers(self):
         provider = PriceProvider()
-        target = datetime(2026, 4, 21, 10, 30)
+        target = datetime(2026, 4, 21, 10, 30, tzinfo=ZoneInfo("Europe/Oslo"))
         observed_headers: dict[str, str | None] = {}
 
         class _Response:

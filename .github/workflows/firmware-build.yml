@@ -19,6 +19,7 @@ jobs:
       - name: Build ESP-IDF firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
+          esp_idf_version: v5.4
           target: esp32
           path: firmware/esp_idf_ams_han_gateway_wroom32d
           command: idf.py build
