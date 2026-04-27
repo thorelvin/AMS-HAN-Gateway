@@ -71,7 +71,9 @@ class DashboardConnectionState:
         self._slow_counter += 1
         # Port rescans are useful while searching for a gateway, but doing them too
         # often adds background work even while the dashboard is otherwise idle.
-        if self._slow_counter % 30 == 0 and (self.show_advanced or not self.connection_status.startswith("Connected to")):
+        if self._slow_counter % 30 == 0 and (
+            self.show_advanced or not self.connection_status.startswith("Connected to")
+        ):
             self.refresh_ports()
         self.sync_from_service(force_heavy=False)
         if self._slow_counter % 3 == 0:

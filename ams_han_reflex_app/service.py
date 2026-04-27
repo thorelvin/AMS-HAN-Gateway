@@ -637,9 +637,17 @@ class GatewayService:
             }
         signed = s.export_w - s.import_w
         voltage_text = f"Average voltage {s.avg_voltage_v:.1f} V"
+        power_model_text = "from SNAP values"
+        apparent_power_va = s.apparent_power_va
+        estimated_power_factor = s.estimated_power_factor
         if d is not None:
             voltage_text = (
                 f"L1 {d['l1_v']:.1f} V | L2 {d['l2_v']:.1f} V | L3 {d['l3_v']:.1f} V | Avg {d['avg_voltage_v']:.1f} V"
+            )
+            apparent_power_va = float(d.get("apparent_power_va", apparent_power_va))
+            estimated_power_factor = float(d.get("estimated_power_factor", estimated_power_factor))
+            power_model_text = (
+                "from active/reactive power" if d.get("apparent_source") == "pq" else "from V x I fallback"
             )
         return {
             "meter": f"{s.meter_id} ({s.meter_type})",
@@ -649,7 +657,9 @@ class GatewayService:
             "reactive": f"Q+ {s.q_import_var:.1f} var | Q- {s.q_export_var:.1f} var",
             "voltage": voltage_text,
             "current": f"L1 {s.l1_a:.3f} A | L2 {s.l2_a:.3f} A | L3 {s.l3_a:.3f} A | Total {s.total_current_a:.3f} A",
-            "power_factor": f"PF {s.estimated_power_factor:.2f} | Apparent {s.apparent_power_va:.1f} VA",
+            "power_factor": (
+                f"Estimated PF {estimated_power_factor:.2f} | Apparent {apparent_power_va:.1f} VA | {power_model_text}"
+            ),
             "counters": f"Rolling {s.rolling_samples} | RX {s.frames_rx} | Bad {s.frames_bad}",
             "stats": f"Frames: seq={self.last_frame_seq}, len={self.last_frame_len}",
         }

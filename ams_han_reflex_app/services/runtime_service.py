@@ -206,6 +206,13 @@ class RuntimeService:
             snap = parsed.payload
             if self.state.latest_kfm_detail and self.state.latest_kfm_detail.get("meter_timestamp") == snap.timestamp:
                 snap.avg_voltage_v = float(self.state.latest_kfm_detail.get("avg_voltage_v", snap.avg_voltage_v))
+                snap.apparent_power_va = float(
+                    self.state.latest_kfm_detail.get("apparent_power_va", snap.apparent_power_va)
+                )
+                snap.estimated_power_factor = float(
+                    self.state.latest_kfm_detail.get("estimated_power_factor", snap.estimated_power_factor)
+                )
+                snap.total_current_a = float(self.state.latest_kfm_detail.get("total_current_a", snap.total_current_a))
             self.state.latest_snapshot = snap
             record_history(snap)
             sample = self._snapshot_sample(snap)

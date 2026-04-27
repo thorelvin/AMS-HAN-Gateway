@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import sqrt
 from typing import Any
 
 
@@ -59,8 +60,12 @@ def parse_kfm001_frame(hex_payload: str) -> dict[str, Any] | None:
     l3_a = vals[6] / 1000.0
     total_a = l1_a + l2_a + l3_a
     net_w = import_w - export_w
-    apparent = sum(v * a for v, a in [(l1_v, l1_a), (l2_v, l2_a), (l3_v, l3_a)] if v > 1.0)
+    net_reactive_var = q_import - q_export
+    apparent_from_pq = sqrt((net_w * net_w) + (net_reactive_var * net_reactive_var))
+    apparent_from_vi = sum(v * a for v, a in [(l1_v, l1_a), (l2_v, l2_a), (l3_v, l3_a)] if v > 1.0)
+    apparent = apparent_from_pq if apparent_from_pq > 1.0 else apparent_from_vi
     pf = min(1.0, abs(net_w) / apparent) if apparent > 1.0 else 0.0
+    apparent_source = "pq" if apparent_from_pq > 1.0 else "vi_fallback"
     return {
         "meter_timestamp": meter_ts,
         "meter_id": meter_id,
@@ -80,4 +85,5 @@ def parse_kfm001_frame(hex_payload: str) -> dict[str, Any] | None:
         "net_power_w": net_w,
         "apparent_power_va": apparent,
         "estimated_power_factor": pf,
+        "apparent_source": apparent_source,
     }

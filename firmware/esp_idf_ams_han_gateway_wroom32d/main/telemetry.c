@@ -1,4 +1,5 @@
 #include "telemetry.h"
+#include <math.h>
 #include <string.h>
 
 typedef struct {
@@ -32,14 +33,44 @@ static float f_abs(float v) {
     return v < 0.0f ? -v : v;
 }
 
+static bool is_valid_voltage(float v) {
+    return v > 1.0f;
+}
+
 void telemetry_apply_derivations(han_snapshot_t *s) {
     // These derived values are duplicated on the firmware side so the dashboard gets
     // useful summaries immediately, even before it does any richer analysis itself.
     s->total_current_a = s->l1_a + s->l2_a + s->l3_a;
-    s->avg_voltage_v = (s->l1_v + s->l2_v + s->l3_v) / 3.0f;
+    float voltage_sum = 0.0f;
+    uint8_t voltage_count = 0;
+    if (is_valid_voltage(s->l1_v)) {
+        voltage_sum += s->l1_v;
+        voltage_count++;
+    }
+    if (is_valid_voltage(s->l2_v)) {
+        voltage_sum += s->l2_v;
+        voltage_count++;
+    }
+    if (is_valid_voltage(s->l3_v)) {
+        voltage_sum += s->l3_v;
+        voltage_count++;
+    }
+    s->avg_voltage_v = voltage_count > 0 ? voltage_sum / voltage_count : 0.0f;
     s->phase_imbalance_a = fmax3(s->l1_a, s->l2_a, s->l3_a) - fmin3(s->l1_a, s->l2_a, s->l3_a);
     s->net_power_w = s->import_w - s->export_w;
-    s->apparent_power_va = (s->l1_v * s->l1_a) + (s->l2_v * s->l2_a) + (s->l3_v * s->l3_a);
+
+    // Prefer the physically stronger P/Q model when the meter provides active and
+    // reactive power. This stays stable even if one voltage channel is missing or
+    // intentionally not wired, which is common in some HAN/IT setups.
+    const float net_reactive_var = s->q_import_var - s->q_export_var;
+    const float apparent_from_pq = sqrtf((s->net_power_w * s->net_power_w) + (net_reactive_var * net_reactive_var));
+
+    float apparent_from_vi = 0.0f;
+    if (is_valid_voltage(s->l1_v)) apparent_from_vi += s->l1_v * s->l1_a;
+    if (is_valid_voltage(s->l2_v)) apparent_from_vi += s->l2_v * s->l2_a;
+    if (is_valid_voltage(s->l3_v)) apparent_from_vi += s->l3_v * s->l3_a;
+
+    s->apparent_power_va = apparent_from_pq > 1.0f ? apparent_from_pq : apparent_from_vi;
     if (s->apparent_power_va > 1.0f) {
         s->estimated_power_factor = f_abs(s->net_power_w) / s->apparent_power_va;
         if (s->estimated_power_factor > 1.0f) s->estimated_power_factor = 1.0f;
