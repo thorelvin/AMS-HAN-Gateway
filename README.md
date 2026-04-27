@@ -417,6 +417,29 @@ Current response and data lines include:
 
 The firmware README documents a default topic prefix of `amshan/<device_id>` and publishes live state topics for status, power, phases, metrics, and raw data. It also supports retained Home Assistant MQTT discovery and can republish discovery payloads when requested with `REPUBLISH_DISCOVERY`.
 
+### Verified Home Assistant MQTT setup
+
+The MQTT workflow has now been verified working with a Raspberry Pi Home Assistant installation where the broker requires a username and password. The gateway was configured only from the dashboard GUI, then connected automatically and appeared in Home Assistant with working MQTT-backed entities.
+
+Home Assistant device page after successful discovery:
+
+![Home Assistant MQTT device view](docs/images/home-assistant-mqtt-device.png)
+
+Recommended procedure:
+
+1. In Home Assistant on the Raspberry Pi, make sure the MQTT broker is running and note the broker host or IP address, port, username, and password.
+2. In the dashboard, first connect the gateway to Wi-Fi from the `Gateway Wi-Fi` panel so the ESP32 can reach the broker on the local network.
+3. In the `MQTT Broker` panel, enter the broker address, port, username, password, and preferred topic prefix.
+4. Click `Save MQTT` to store the broker settings in the ESP32, then click `Enable MQTT`.
+5. If Home Assistant does not show the device immediately, click `Publish MQTT Discovery` once to republish the retained discovery payloads.
+6. Open Home Assistant and confirm that the `AMS HAN Gateway` device appears with live power, voltage, current, and status entities.
+
+Verified result:
+
+- MQTT authentication with username and password worked from the dashboard GUI
+- the ESP32 reconnected to MQTT automatically after the settings were stored
+- Home Assistant discovered the gateway and exposed the live entities shown above
+
 ## Software requirements
 
 - Python 3.10 or newer

@@ -52,10 +52,13 @@ class HistoryService:
             return list(self.replay_records)[:limit]
         return self.store.get_recent(limit)
 
-    def all_records_desc(self) -> list[HistoryRecord]:
+    def all_records_desc(self, limit: int = 0) -> list[HistoryRecord]:
         if self.replay_records:
-            return list(self.replay_records)
-        return self.store.get_all()
+            rows = list(self.replay_records)
+            return rows[:limit] if limit > 0 else rows
+        # Most dashboard analytics only need the newest N rows. Fetching the full
+        # table and slicing in Python makes the UI gradually slower as history grows.
+        return self.store.get_recent(limit) if limit > 0 else self.store.get_all()
 
     def records_since_meter_time(self, since: datetime, limit: int = 0) -> list[HistoryRecord]:
         if self.replay_records:
@@ -84,7 +87,7 @@ class HistoryService:
         )
 
     def integrated_intervals(self, limit: int = 8000) -> list[IntegratedInterval]:
-        recs = list(reversed(self.all_records_desc()[:limit]))
+        recs = list(reversed(self.all_records_desc(limit)))
         rows: list[IntegratedInterval] = []
         prev_dt = None
         prev_snap = None

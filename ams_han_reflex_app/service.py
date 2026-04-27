@@ -395,8 +395,8 @@ class GatewayService:
     def _history_records_desc(self, limit: int = 500):
         return self.history_service.records_desc(limit)
 
-    def _all_records_desc(self):
-        return self.history_service.all_records_desc()
+    def _all_records_desc(self, limit: int = 0):
+        return self.history_service.all_records_desc(limit)
 
     def _derive_baseline(self, current_ts: str, lookback_records: list[HistoryRecord]) -> dict[str, Any] | None:
         vals = []
@@ -547,7 +547,7 @@ class GatewayService:
             "progress_text": summary.progress_text,
         }
 
-    def dashboard_sync_data(self) -> DashboardSyncData:
+    def dashboard_sync_data(self, *, include_logs: bool = True, log_limit: int = 160) -> DashboardSyncData:
         replay = self.replay_summary()
         snapshot = self.snapshot_dict()
         overview = self.unified_overview()
@@ -605,11 +605,11 @@ class GatewayService:
             replay_progress_text=str(replay["progress_text"]),
             replay_source_text=str(replay["source_name"] or "-"),
             auto_connect_message=auto_connect_message,
-            logs=self.logs_list(),
+            logs=self.logs_list(log_limit) if include_logs else [],
         )
 
     # Data accessors
-    def logs_list(self, limit: int = 300) -> list[str]:
+    def logs_list(self, limit: int = 160) -> list[str]:
         return list(self.logs)[:limit]
 
     def has_cached_snapshot(self) -> bool:
@@ -664,7 +664,8 @@ class GatewayService:
         return self.analysis_service.history_rows(self._history_records_desc(limit))
 
     def get_summary(self, limit: int = 500) -> HistorySummary:
-        return self.history_service.summary(limit)
+        key = self._cache_key("history_summary", limit)
+        return self._cache_get_or_set(key, lambda: self.history_service.summary(limit))
 
     def analysis_summary(self, limit: int = 1000):
         key = self._cache_key("analysis_summary", limit)
@@ -689,7 +690,7 @@ class GatewayService:
         )
 
     def top_hour_rows(self, limit: int = 2000, top_n: int = 8):
-        return self.analysis_service.top_hour_rows(self._all_records_desc()[:limit], top_n=top_n)
+        return self.analysis_service.top_hour_rows(self._all_records_desc(limit), top_n=top_n)
 
     def event_tracker_rows(self, limit: int = 80, event_filter: str = "all"):
         return self.analysis_service.diagnostics_summary(
@@ -708,11 +709,11 @@ class GatewayService:
         )["events"]
 
     def daily_graph_data(self, limit: int = 6000):
-        return self.analysis_service.daily_graph_data(self._all_records_desc()[:limit])
+        return self.analysis_service.daily_graph_data(self._all_records_desc(limit))
 
     def load_heatmaps(self, limit: int = 6000, switch_threshold_w: float = 300.0):
         return self.analysis_service.load_heatmaps(
-            self._all_records_desc()[:limit],
+            self._all_records_desc(limit),
             switch_threshold_w=switch_threshold_w,
             mains_network_type=self.mains_network_type,
         )
@@ -736,7 +737,7 @@ class GatewayService:
     def _signature_observed_dates(self, limit: int = 6000) -> list[str]:
         observed: list[str] = []
         seen: set[str] = set()
-        for record in self._all_records_desc()[:limit]:
+        for record in self._all_records_desc(limit):
             ts = str(record.snapshot.timestamp or "")
             day_text = ts[:10] if len(ts) >= 10 else ""
             if day_text and day_text not in seen:

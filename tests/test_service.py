@@ -71,6 +71,43 @@ def _ingest_live_fixture(svc: service_module.GatewayService, fixture_name: str) 
 
 
 class GatewayServiceTest(unittest.TestCase):
+    def test_dashboard_sync_data_can_skip_log_payload_for_regular_live_ticks(self):
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
+        ):
+            svc = service_module.GatewayService(Path(temp_dir) / "history.sqlite3")
+            for idx in range(12):
+                svc.logs.appendleft(f"[12:00:{idx:02d}] RX: FRAME,{idx},39,ABCDEF")
+
+            without_logs = svc.dashboard_sync_data(include_logs=False)
+            with_logs = svc.dashboard_sync_data(include_logs=True, log_limit=5)
+
+            self.assertEqual(without_logs.logs, [])
+            self.assertEqual(len(with_logs.logs), 5)
+            self.assertTrue(with_logs.logs[0].startswith("[12:00:11]"))
+
+    def test_bounded_recent_queries_do_not_need_full_history_scan(self):
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(service_module, "default_settings_path", return_value=Path(temp_dir) / "settings.json"),
+        ):
+            svc = service_module.GatewayService(
+                Path(temp_dir) / "history.sqlite3",
+                price_provider=_FixedPriceProvider(),
+            )
+            svc._on_state(True, "Connected to COM4")
+            _ingest_live_fixture(svc, "demo_session.log")
+
+            with patch.object(svc.history_service.store, "get_all", side_effect=AssertionError("full scan used")):
+                heatmaps = svc.load_heatmaps(100, switch_threshold_w=300.0)
+                daily = svc.daily_graph_data(100)
+                top_hours = svc.top_hour_rows(100, top_n=3)
+
+            self.assertTrue(heatmaps.recent_rows)
+            self.assertTrue(daily.rows)
+            self.assertGreaterEqual(len(top_hours), 1)
+
     def test_auto_connect_is_noop_when_serial_is_already_connected(self):
         with (
             tempfile.TemporaryDirectory() as temp_dir,

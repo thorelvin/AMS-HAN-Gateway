@@ -69,7 +69,9 @@ class DashboardConnectionState:
     def live_tick(self, _moment_value: str = ""):
         _service().tick_runtime(int(self.baudrate or "115200"))
         self._slow_counter += 1
-        if self._slow_counter % 9 == 0:
+        # Port rescans are useful while searching for a gateway, but doing them too
+        # often adds background work even while the dashboard is otherwise idle.
+        if self._slow_counter % 30 == 0 and (self.show_advanced or not self.connection_status.startswith("Connected to")):
             self.refresh_ports()
         self.sync_from_service(force_heavy=False)
         if self._slow_counter % 3 == 0:
@@ -81,7 +83,8 @@ class DashboardConnectionState:
             self.refresh_tab_data()
 
     def sync_from_service(self, force_heavy: bool = False):
-        snapshot = _service().dashboard_sync_data()
+        include_logs = force_heavy or self.current_tab == "log"
+        snapshot = _service().dashboard_sync_data(include_logs=include_logs)
         self.connection_status = snapshot.connection_status
         self.mains_network_type = snapshot.mains_network_type
         self.show_advanced = snapshot.show_advanced
@@ -128,7 +131,8 @@ class DashboardConnectionState:
         self.replay_progress_text = snapshot.replay_progress_text
         self.replay_source_text = snapshot.replay_source_text
         self.auto_connect_message = snapshot.auto_connect_message
-        self.logs = snapshot.logs
+        if include_logs:
+            self.logs = snapshot.logs
         if force_heavy:
             self.refresh_live_metrics()
             self.refresh_tab_data()
